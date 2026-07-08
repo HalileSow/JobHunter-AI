@@ -21,7 +21,7 @@ export async function generateLetter(offerText, cvPath) {
 
   const cvContent = await fs.readFile(cvPath, 'utf-8');
   const genAI = new GoogleGenerativeAI(apiKey);
-  const model = genAI.getGenerativeModel({ model: "gemini-pro-latest" });
+  const model = genAI.getGenerativeModel({ model: "gemini-3.5-flash" });
 
  // Utilisation de flash pour la rapidité
 

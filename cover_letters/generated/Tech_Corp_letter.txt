@@ -1,0 +1,27 @@
+Ibrahima Sow
+[Votre Adresse]
+[Votre Téléphone]
+[Votre Email]
+
+À l'attention du responsable du recrutement
+Tech Corp
+
+Objet : Candidature au poste de Développeur Fullstack
+
+Madame, Monsieur,
+
+C’est avec un vif intérêt que je postule aujourd’hui au poste de Développeur Fullstack au sein de Tech Corp, suite à votre offre publiée sur http://localhost:4174/job/1. 
+
+Issu d’un parcours diversifié en logistique, vente et mercerie, j’ai opéré une transition professionnelle passionnée vers le développement web. Bien que ce profil puisse sembler atypique, mes expériences passées m'ont doté de compétences transversales directement transposables et indispensables à la réussite d’un projet informatique.
+
+En effet, mon expertise en logistique m'a appris à modéliser des flux complexes, à optimiser des processus et à faire preuve d'une organisation sans faille. Ces compétences sont des atouts majeurs pour structurer des bases de données et concevoir des architectures back-end robustes et performantes. 
+
+Par ailleurs, mon expérience dans la vente m'octroie une excellente compréhension de la relation client et des besoins des utilisateurs. Cette sensibilité commerciale me permet de concevoir des interfaces front-end intuitives, centrées sur l'expérience utilisateur (UX) et d'intégrer facilement les retours fonctionnels des équipes métier. Enfin, la précision et la minutie acquises dans le domaine de la mercerie se traduisent aujourd'hui par une attention rigoureuse portée à la qualité, à la lisibilité et à la maintenance de mon code.
+
+Déterminé, méthodique et doté d'une forte capacité d'adaptation, je suis convaincu que mon profil hybride apportera une perspective unique et une grande valeur ajoutée à vos équipes techniques chez Tech Corp.
+
+Je me tiens à votre entière disposition pour convenir d'un entretien afin de vous présenter de vive voix mon parcours et mes projets récents.
+
+Je vous prie d'agréer, Madame, Monsieur, l'expression de mes salutations distinguées.
+
+Ibrahima Sow

@@ -1,0 +1,12 @@
+{
+  "user": {
+    "name": "Ibrahima Sow",
+    "location": "Abidjan, Côte d'Ivoire",
+    "nationality": "Sénégalaise",
+    "languages": ["fr"]
+  },
+  "preferences": {
+    "ai_model": "gemini-pro",
+    "default_language": "fr"
+  }
+}

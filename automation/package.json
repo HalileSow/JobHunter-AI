@@ -1,7 +1,7 @@
 {
   "name": "automation",
   "version": "1.0.0",
-  "description": "",
+  "description": "Scripts d'automatisation pour JobHunter-AI",
   "main": "index.js",
   "type": "module",
   "scripts": {
@@ -9,11 +9,12 @@
   },
   "keywords": [],
   "author": "",
-  "license": "ISC"
-}
-
+  "license": "ISC",
   "dependencies": {
     "@google/generative-ai": "^0.24.1",
-    "dotenv": "^17.4.2"
+    "axios": "^1.6.0",
+    "cheerio": "^1.0.0-rc.12",
+    "dotenv": "^16.0.0",
+    "playwright": "^1.61.1"
   }
 }

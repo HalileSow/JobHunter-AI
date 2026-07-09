@@ -52,7 +52,6 @@ createServer(async (req, res) => {
     }
     return;
   }
-...
 
   if (pathname === "/api/jobs" && req.method === "POST") {
     let body = "";

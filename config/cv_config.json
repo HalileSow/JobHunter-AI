@@ -1,0 +1,10 @@
+{
+  "active_cv": "default_cv.txt",
+  "cvs": [
+    {
+      "id": "default_cv.txt",
+      "name": "CV Principal",
+      "path": "cv/storage/default_cv.txt"
+    }
+  ]
+}

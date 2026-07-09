@@ -2,11 +2,13 @@ import { createServer } from "node:http";
 import { readFile, writeFile } from "node:fs/promises";
 import { extname, join, normalize } from "node:path";
 import { fileURLToPath } from "node:url";
+import sqlite3 from 'sqlite3';
+import { open } from 'sqlite';
 
 const root = fileURLToPath(new URL(".", import.meta.url));
 const port = process.env.PORT ? Number(process.env.PORT) : 4173;
 const host = process.env.HOST || "0.0.0.0";
-const DB_PATH = join(root, "..", "database", "jobs_db.json");
+const DB_PATH = join(root, "..", "database", "jobhunter.db");
 
 const types = {
   ".html": "text/html; charset=utf-8",
@@ -20,6 +22,13 @@ const types = {
   ".svg": "image/svg+xml",
 };
 
+async function getDb() {
+    return await open({
+        filename: DB_PATH,
+        driver: sqlite3.Database
+    });
+}
+
 function safePath(urlPath) {
   const cleaned = normalize(decodeURIComponent(urlPath)).replace(/^(\.\.[/\\])+/, "");
   return cleaned === "/" ? "/index.html" : cleaned;
@@ -32,41 +41,41 @@ createServer(async (req, res) => {
   // API Routes
   if (pathname === "/api/jobs" && req.method === "GET") {
     try {
-      const data = await readFile(DB_PATH, "utf-8");
+      const db = await getDb();
+      const jobs = await db.all('SELECT * FROM jobs ORDER BY created_at DESC');
+      await db.close();
       res.writeHead(200, { "Content-Type": "application/json; charset=utf-8" });
-      res.end(data);
+      res.end(JSON.stringify(jobs));
     } catch (err) {
       res.writeHead(500, { "Content-Type": "text/plain; charset=utf-8" });
       res.end("Error reading database");
     }
     return;
   }
+...
 
   if (pathname === "/api/jobs" && req.method === "POST") {
     let body = "";
     req.on("data", chunk => { body += chunk.toString(); });
     req.on("end", async () => {
       try {
-        const newJob = JSON.parse(body);
-        const data = await readFile(DB_PATH, "utf-8");
-        const jobs = JSON.parse(data);
+        const { title, company, link, country, score, letter, analysis } = JSON.parse(body);
         
-        // Simple validation
-        if (!newJob.entreprise || !newJob.poste) {
+        if (!title || !company) {
           res.writeHead(400, { "Content-Type": "text/plain; charset=utf-8" });
           res.end("Missing required fields");
           return;
         }
 
-        newJob.id = Date.now().toString();
-        newJob.date = new Date().toISOString().split("T")[0];
-        newJob.statut = newJob.statut || "Postulé";
-
-        jobs.push(newJob);
-        await writeFile(DB_PATH, JSON.stringify(jobs, null, 2));
+        const db = await getDb();
+        await db.run(
+          'INSERT INTO jobs (title, company, link, country, score, letter, analysis) VALUES (?, ?, ?, ?, ?, ?, ?)',
+          [title, company, link, country, score, letter, analysis]
+        );
+        await db.close();
         
         res.writeHead(201, { "Content-Type": "application/json; charset=utf-8" });
-        res.end(JSON.stringify(newJob));
+        res.end(JSON.stringify({ success: true }));
       } catch (err) {
         res.writeHead(400, { "Content-Type": "text/plain; charset=utf-8" });
         res.end("Invalid JSON");

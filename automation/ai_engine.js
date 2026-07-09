@@ -8,12 +8,11 @@ import { GoogleGenerativeAI } from "@google/generative-ai";
 dotenv.config({ path: path.resolve(process.cwd(), '../.env') });
 
 /**
- * Génère une lettre de motivation à partir d'une offre et d'un CV.
- * @param {string} offerText - Le texte de l'offre d'emploi.
- * @param {string} cvPath - Le chemin absolu vers le fichier CV.
- * @returns {Promise<string>} - Le texte de la lettre générée.
+ * Analyse une offre et génère une candidature.
+ * @param {string} lang - La langue de la lettre (fr, en, de)
+ * @returns {Promise<Object>} - { score, letter, analysis }
  */
-export async function generateLetter(offerText, cvPath) {
+export async function analyzeJob(offerText, cvPath, lang = 'fr') {
   const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) {
     throw new Error("GEMINI_API_KEY manquante dans le fichier .env");
@@ -23,9 +22,7 @@ export async function generateLetter(offerText, cvPath) {
   const genAI = new GoogleGenerativeAI(apiKey);
   const model = genAI.getGenerativeModel({ model: "gemini-3.5-flash" });
 
- // Utilisation de flash pour la rapidité
-
-  const prompt = `Tu es un expert en recrutement. 
+  const prompt = `Tu es un expert en recrutement.
 À partir du CV suivant :
 ---
 ${cvContent}
@@ -34,16 +31,18 @@ Et de l'offre d'emploi suivante :
 ---
 ${offerText}
 ---
-Rédige une lettre de motivation professionnelle, convaincante et personnalisée en français. 
-La lettre doit mettre en avant les compétences du candidat qui correspondent précisément aux besoins de l'offre. 
-Utilise un ton professionnel et respectueux. 
-Ne dépasse pas 300 mots. 
-Réponds uniquement avec le texte de la lettre, sans commentaires avant ou après.`;
+Rédige une lettre de motivation convaincante en ${lang === 'fr' ? 'français' : lang === 'en' ? 'anglais' : 'allemand'}.
+Réponds UNIQUEMENT en JSON avec la structure suivante :
+{
+  "score": <score de 0 à 100>,
+  "letter": "<lettre de motivation convaincante, max 300 mots>",
+  "analysis": "<analyse des points forts et des lacunes par rapport au CV>"
+}`;
 
   const result = await model.generateContent(prompt);
-  const response = await result.response;
-  const text = response.text();
-
-  return text;
-
+  const responseText = result.response.text();
+  
+  // Nettoyage pour extraire le JSON
+  const jsonString = responseText.replace(/```json/g, '').replace(/```/g, '').trim();
+  return JSON.parse(jsonString);
 }

@@ -161,20 +161,33 @@ async function fetchJobs() {
 
 function renderJobs(jobs) {
   if (jobs.length === 0) {
-    jobsList.innerHTML = `<p class="empty-msg">Aucune candidature enregistrée.</p>`;
+    jobsList.innerHTML = `<p class="text-gray-500 text-center p-4">Aucune candidature enregistrée.</p>`;
     return;
   }
 
   jobsList.innerHTML = jobs.map(job => `
-    <div class="job-item" style="display: flex; justify-content: space-between; align-items: center; padding: 10px; border-bottom: 1px solid #eee;">
-      <div class="job-info">
-        <strong>${job.entreprise}</strong><br>
-        <small>${job.poste}</small>
+    <div class="bg-white rounded-lg shadow-md p-6 border-l-4 ${job.score > 70 ? 'border-green-500' : 'border-orange-400'}">
+      <div class="flex justify-between items-start mb-4">
+        <div>
+          <h3 class="text-xl font-bold text-gray-800">${job.title}</h3>
+          <p class="text-gray-600 font-medium">${job.company} - ${job.country}</p>
+        </div>
+        <span class="px-3 py-1 rounded-full text-xs font-semibold bg-gray-100">${job.status}</span>
       </div>
-      <div class="job-meta" style="text-align: right; font-size: 0.8em;">
-        <div class="status" style="font-weight: bold;">${job.statut}</div>
-        <a href="${job.lien}" target="_blank" style="color: blue;">Lien</a><br>
-        <span>${job.date}</span>
+      
+      <div class="grid grid-cols-2 gap-4 text-sm text-gray-600 mb-4">
+        <p>💰 Salaire: <span class="font-semibold">${job.salary}</span></p>
+        <p>📝 Contrat: <span class="font-semibold">${job.contract_type}</span></p>
+        <p>📅 Posté le: <span class="font-semibold">${job.date_posted}</span></p>
+        <p>🎯 Score IA: <span class="font-bold text-blue-600">${job.score}/100</span></p>
+      </div>
+
+      <div class="bg-gray-50 p-3 rounded mb-4 text-sm text-gray-700 italic">
+        "${job.analysis}"
+      </div>
+      
+      <div class="flex justify-end gap-2">
+        <a href="${job.link}" target="_blank" class="text-sm bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700">Voir l'offre</a>
       </div>
     </div>
   `).join("");
@@ -188,15 +201,16 @@ function updateCounters(jobs) {
 
 addJobForm.addEventListener("submit", async (e) => {
   e.preventDefault();
-  const entreprise = document.getElementById("jobCompany").value;
-  const poste = document.getElementById("jobPosition").value;
-  const lien = document.getElementById("jobLink").value;
+  const title = document.getElementById("jobPosition").value;
+  const company = document.getElementById("jobCompany").value;
+  const link = document.getElementById("jobLink").value;
+  const country = document.getElementById("jobCountry").value || "Non spécifié";
 
   try {
     const res = await fetch("/api/jobs", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ entreprise, poste, lien })
+      body: JSON.stringify({ title, company, link, country, score: 0, letter: "", analysis: "" })
     });
 
     if (res.ok) {

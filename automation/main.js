@@ -3,11 +3,14 @@ import { analyzeJob } from './ai_engine.js';
 import { initDb } from './db.js';
 import { getActiveCvPath } from './cv_manager.js';
 import { exportLetterToPdf } from './pdf_exporter.js';
-import fs from 'fs/promises';
+import { fileURLToPath } from 'url';
 import path from 'path';
+import fs from 'fs/promises';
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 async function loadConfig() {
-    const configPath = path.resolve(process.cwd(), '../config/search_config.json');
+    const configPath = path.resolve(__dirname, '../config/search_config.json');
     const data = await fs.readFile(configPath, 'utf-8');
     return JSON.parse(data);
 }
@@ -55,7 +58,7 @@ async function runSearch(country, jobTitle, keywords, lang = 'fr') {
             
             // Export PDF
             const filename = `${job.company.replace(/\s+/g, '_')}_letter_${lang}.pdf`;
-            const pdfPath = path.resolve(process.cwd(), `../cover_letters/generated/${filename}`);
+            const pdfPath = path.resolve(__dirname, `../cover_letters/generated/${filename}`);
             await exportLetterToPdf(result.letter, job.company, pdfPath);
             
             console.log(`💾 Candidature et PDF prêts : ${pdfPath}`);

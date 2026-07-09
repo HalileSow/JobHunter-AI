@@ -1,10 +1,13 @@
 import { initDb } from './db.js';
 import fs from 'fs/promises';
 import path from 'path';
+import { fileURLToPath } from 'url';
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 export async function addCv(name, filePath) {
     const db = await initDb();
-    const destPath = path.resolve(process.cwd(), '../cv/storage', path.basename(filePath));
+    const destPath = path.resolve(__dirname, '../cv/storage', path.basename(filePath));
     await fs.copyFile(filePath, destPath);
     
     await db.run('INSERT INTO cvs (name, path) VALUES (?, ?)', [name, destPath]);

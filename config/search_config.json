@@ -1,6 +1,6 @@
 {
   "search": {
     "countries": ["Allemagne", "Autriche", "Belgique", "Luxembourg", "Pays-Bas", "Irlande"],
-    "default_providers": ["adzuna"]
+    "default_providers": ["adzuna", "indeed_scraper"]
   }
 }

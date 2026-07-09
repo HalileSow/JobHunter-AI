@@ -1,10 +1,13 @@
 import sqlite3 from 'sqlite3';
 import { open } from 'sqlite';
 import path from 'path';
+import { fileURLToPath } from 'url';
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 async function initDb() {
     const db = await open({
-        filename: path.resolve(process.cwd(), '../database/jobhunter.db'),
+        filename: path.resolve(__dirname, '../database/jobhunter.db'),
         driver: sqlite3.Database
     });
 

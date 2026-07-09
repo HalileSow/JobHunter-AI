@@ -18,14 +18,17 @@ export async function browserScrape(url, selector, titleSelector, companySelecto
 
   try {
     console.log(`🌐 Navigation vers : ${url}...`);
-    await page.goto(url, { waitUntil: 'networkidle' });
+    await page.goto(url, { 
+        waitUntil: 'domcontentloaded', 
+        timeout: 60000 
+    });
 
     // Petit scroll pour simuler un humain et charger le contenu dynamique
     await page.evaluate(() => window.scrollBy(0, window.innerHeight));
-    await page.waitForTimeout(2000); 
+    await page.waitForTimeout(3000); 
 
     console.log("🔍 Extraction des données...");
-    const jobs = await page.evaluate((sel, tSel, cSel, lSel) => {
+    const jobs = await page.evaluate(({ sel, tSel, cSel, lSel }) => {
       const results = [];
       const elements = document.querySelectorAll(sel);
       
@@ -43,7 +46,7 @@ export async function browserScrape(url, selector, titleSelector, companySelecto
         }
       });
       return results;
-    }, selector, titleSelector, companySelector, linkSelector);
+    }, { selector, titleSelector, companySelector, linkSelector });
 
     console.log(`✅ ${jobs.length} offres trouvées avec Playwright.`);
     await browser.close();

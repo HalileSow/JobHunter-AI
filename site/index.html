@@ -1,194 +1,113 @@
 <!DOCTYPE html>
 <html lang="fr">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>JobHunter-AI</title>
-  <link rel="stylesheet" href="styles.css">
-<script src="https://cdn.tailwindcss.com"></script></head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>JobHunter-AI | Command Center</title>
+    <link rel="stylesheet" href="styles.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+</head>
 <body>
-  <header class="topbar">
-    <div>
-      <p class="eyebrow">JobHunter-AI</p>
-      <h1>Dossier de candidature</h1>
+    <div class="app-container">
+        <!-- Sidebar -->
+        <aside class="sidebar">
+            <div class="logo">
+                <i class="fas fa-robot"></i>
+                <span>JobHunter AI</span>
+            </div>
+            <nav>
+                <button class="nav-item active" data-tab="dashboard"><i class="fas fa-chart-line"></i> Dashboard</button>
+                <button class="nav-item" data-tab="search"><i class="fas fa-search"></i> Nouvelle Recherche</button>
+                <button class="nav-item" data-tab="cvs"><i class="fas fa-file-alt"></i> Mes CV</button>
+                <button class="nav-item" data-tab="settings"><i class="fas fa-cog"></i> Paramètres</button>
+            </nav>
+            <div class="user-profile">
+                <img src="assets/profile.jpg" alt="Profile" onerror="this.src='https://via.placeholder.com/40'">
+                <span>Ibrahima Sow</span>
+            </div>
+        </aside>
+
+        <!-- Main Content -->
+        <main class="main-content">
+            <!-- TAB: DASHBOARD -->
+            <section id="dashboard" class="tab-content active">
+                <header>
+                    <h1>Tableau de Bord</h1>
+                    <div class="stats-bar">
+                        <div class="stat-card">
+                            <span class="stat-label">Offres Analysées</span>
+                            <span class="stat-value" id="total-jobs">0</span>
+                        </div>
+                        <div class="stat-card">
+                            <span class="stat-label">Taux de Match Moyen</span>
+                            <span class="stat-value" id="avg-score">0%</span>
+                        </div>
+                    </div>
+                </header>
+
+                <div class="jobs-grid" id="jobs-list">
+                    <!-- Les cartes d'offres seront injectées ici -->
+                </div>
+            </section>
+
+            <!-- TAB: SEARCH -->
+            <section id="search" class="tab-content">
+                <header>
+                    <h1>Lancer une Recherche Automatisée</h1>
+                    <p>L'IA cherchera les offres, choisira le meilleur CV et rédigera la lettre.</p>
+                </header>
+                <div class="search-form">
+                    <div class="form-group">
+                        <label>Pays</label>
+                        <input type="text" id="search-country" placeholder="ex: Allemagne" value="Allemagne">
+                    </div>
+                    <div class="form-group">
+                        <label>Métier / Titre</label>
+                        <input type="text" id="search-title" placeholder="ex: Développeur Fullstack Node.js">
+                    </div>
+                    <div class="form-group">
+                        <label>Mots-clés</label>
+                        <input type="text" id="search-keywords" placeholder="ex: React, TypeScript, AWS">
+                    </div>
+                    <div class="form-group">
+                        <label>Langue</label>
+                        <select id="search-lang">
+                            <option value="fr">Français</option>
+                            <option value="en">Anglais</option>
+                            <option value="de">Allemand</option>
+                        </select>
+                    </div>
+                    <button id="btn-launch-search" class="btn-primary">
+                        <i class="fas fa-play"></i> Lancer l'Automatisation
+                    </button>
+                </div>
+            </section>
+
+            <!-- TAB: CVS -->
+            <section id="cvs" class="tab-content">
+                <header>
+                    <h1>Gestion des CV</h1>
+                    <p>Gérez vos différents profils spécialisés.</p>
+                </header>
+                <div class="cv-list" id="cv-list">
+                    <!-- Liste des CV injectée ici -->
+                </div>
+            </section>
+
+            <!-- TAB: SETTINGS -->
+            <section id="settings" class="tab-content">
+                <header>
+                    <h1>Paramètres</h1>
+                </header>
+                <div class="settings-grid">
+                    <div class="settings-card">
+                        <h3>Configuration IA</h3>
+                        <p>L'IA utilise actuellement Gemini et OpenAI en fallback.</p>
+                    </div>
+                </div>
+            </section>
+        </main>
     </div>
-    <div class="status">Version locale</div>
-  </header>
-
-  <main class="layout">
-    <section class="panel profile-panel">
-      <div class="profile-photo">
-        <img id="photoPreview" alt="Photo de profil" src="" />
-        <div id="photoFallback" class="photo-fallback">
-          <span>Ajouter une photo</span>
-        </div>
-      </div>
-      <div class="profile-copy">
-        <h2>Ibrahima Sow</h2>
-        <p>Abidjan, Côte d'Ivoire</p>
-        <p>Sénégalais · Français</p>
-        <div class="actions">
-          <label class="button" for="photoInput">Importer une photo</label>
-          <input id="photoInput" type="file" accept="image/*">
-          <button id="clearPhoto" class="button secondary" type="button">Retirer</button>
-        </div>
-        <p class="hint">La photo est facultative. Utilisez-la seulement si le pays ou l’employeur l’attend.</p>
-      </div>
-    </section>
-
-    <section class="panel">
-      <div class="section-head">
-        <h3>Adapter le CV à une offre</h3>
-        <span>Coller le texte d'une annonce et générer un résumé ciblé</span>
-      </div>
-      <div class="offer-tools">
-        <textarea id="offerText" placeholder="Collez ici l'offre d'emploi, puis cliquez sur générer."></textarea>
-        <div class="offer-actions">
-          <button id="generateCv" class="button" type="button">Générer la version ciblée</button>
-          <button id="resetCv" class="button secondary" type="button">Réinitialiser</button>
-        </div>
-        <div class="generated-cv">
-          <div>
-            <strong>Titre visé</strong>
-            <p id="targetTitle">Agent polyvalent</p>
-          </div>
-          <div>
-            <strong>Résumé adapté</strong>
-            <p id="targetSummary">Profil polyvalent orienté tâches pratiques, logistique, entretien et service.</p>
-          </div>
-          <div>
-            <strong>Mots-clés</strong>
-            <div id="targetKeywords" class="tags"></div>
-          </div>
-        </div>
-      </div>
-    </section>
-
-    <section class="panel">
-      <div class="section-head">
-        <h3>Résumé</h3>
-        <span>Profil ciblé pour postes débutants polyvalents</span>
-      </div>
-      <div class="grid three">
-        <article class="mini-card">
-          <strong>Expérience</strong>
-          <p>3 ans en mercerie</p>
-        </article>
-        <article class="mini-card">
-          <strong>Langue</strong>
-          <p>Français courant</p>
-        </article>
-        <article class="mini-card">
-          <strong>Objectif</strong>
-          <p>Agriculture, logistique, entretien, restauration</p>
-        </article>
-      </div>
-    </section>
-
-    <section class="panel">
-      <div class="section-head">
-        <h3>Documents</h3>
-        <span>Fichiers prêts à convertir en PDF</span>
-      </div>
-      <div class="grid two">
-        <article class="list-card">
-          <strong>CV</strong>
-          <ul>
-            <li>Français</li>
-            <li>Anglais</li>
-            <li>Allemand</li>
-          </ul>
-        </article>
-        <article class="list-card">
-          <strong>Lettres</strong>
-          <ul>
-            <li>Anglais</li>
-            <li>Allemand</li>
-          </ul>
-        </article>
-      </div>
-    </section>
-
-    <section class="panel">
-      <div class="section-head">
-        <h3>Secteurs visés</h3>
-        <span>Domaines d'activité prioritaires</span>
-      </div>
-      <div class="tags">
-        <span>Agriculture</span>
-        <span>Hôtellerie</span>
-        <span>Restauration</span>
-        <span>Entrepôts</span>
-        <span>Usines</span>
-        <span>Logistique</span>
-        <span>Nettoyage industriel</span>
-      </div>
-    </section>
-
-    <section class="panel">
-      <div class="section-head">
-        <h3>Pays ciblés</h3>
-        <span>Marchés qui recrutent à l’international</span>
-      </div>
-      <div class="tags">
-        <span>🇦🇹 Autriche</span>
-        <span>🇩🇪 Allemagne</span>
-        <span>🇱🇺 Luxembourg</span>
-        <span>🇳🇱 Pays-Bas</span>
-        <span>🇧🇪 Belgique</span>
-        <span>🇮🇪 Irlande</span>
-      </div>
-    </section>
-
-
-    <section class="panel">
-      <div class="section-head">
-        <h3>Gestion des Candidatures</h3>
-        <span>Ajoutez et visualisez vos recherches en temps réel</span>
-      </div>
-      
-      <!-- Formulaire d'ajout -->
-      <form id="addJobForm" class="job-form">
-        <div class="grid two">
-          <input type="text" id="jobCompany" placeholder="Entreprise" required>
-          <input type="text" id="jobPosition" placeholder="Poste" required>
-        </div>
-        <div class="grid two">
-          <input type="url" id="jobLink" placeholder="Lien de l'offre (URL)">
-          <button type="submit" class="button">Ajouter la candidature</button>
-        </div>
-      </form>
-
-      <!-- Liste des jobs -->
-      <div id="jobsList" class="jobs-list">
-        <p class="empty-msg">Aucune candidature enregistrée.</p>
-      </div>
-    </section>
-
-    <section class="panel">
-      <div class="section-head">
-        <h3>Suivi</h3>
-        <span>Base simple pour candidatures</span>
-      </div>
-      <div class="tracker">
-        <div><strong>Offres</strong><span id="countTotal">0</span></div>
-        <div><strong>Envoyées</strong><span id="countSent">0</span></div>
-        <div><strong>Réponses</strong><span id="countReplies">0</span></div>
-      </div>
-    </section>
-
-    <section class="panel">
-      <div class="section-head">
-        <h3>Depuis le téléphone</h3>
-        <span>Utilisation pratique</span>
-      </div>
-      <div class="mobile-notes">
-        <p>Le plus simple est d'ouvrir ce site sur le téléphone via un hébergement ou un partage réseau, puis d'importer les photos et offres directement depuis le mobile.</p>
-        <p>Pour un accès permanent, il faut publier le site ou le synchroniser dans un espace cloud. En local pur, le téléphone ne peut pas voir le dossier de l'ordinateur sans passer par un serveur ou une synchronisation.</p>
-      </div>
-    </section>
-  </main>
-
-  <script src="app.js"></script>
+    <script src="app.js"></script>
 </body>
 </html>

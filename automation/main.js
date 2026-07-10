@@ -1,7 +1,7 @@
 import { scrapeJobs } from './scraper.js';
-import { analyzeJob } from './ai_engine.js';
+import { analyzeJob, selectBestCv } from './ai_engine.js';
 import { initDb } from './db.js';
-import { getActiveCvPath } from './cv_manager.js';
+import { getAllCvs, getActiveCvPath } from './cv_manager.js';
 import { exportLetterToPdf } from './pdf_exporter.js';
 import { fileURLToPath } from 'url';
 import path from 'path';
@@ -18,14 +18,21 @@ async function loadConfig() {
 
 async function runSearch(country, jobTitle, keywords, lang = 'fr') {
     const config = await loadConfig();
-    const cvPath = await getActiveCvPath();
     const db = await initDb();
     
-    if (!cvPath) {
-        throw new Error("Aucun CV actif sélectionné.");
+    console.log(`🚀 Démarrage JobHunter-AI pour : ${jobTitle} en ${country} (Langue: ${lang})`);
+    
+    // Gestion des CV : On récupère tout pour laisser l'IA choisir
+    const allCvs = await getAllCvs();
+    if (allCvs.length === 0) {
+        throw new Error("Aucun CV trouvé dans la base de données.");
     }
 
-    console.log(`🚀 Démarrage JobHunter-AI pour : ${jobTitle} en ${country} (Langue: ${lang})`);
+    // Chargement du contenu des CV pour l'IA
+    const cvsWithContent = await Promise.all(allCvs.map(async cv => {
+        const content = await fs.readFile(cv.path, 'utf-8');
+        return { ...cv, content };
+    }));
     
     let allJobs = [];
     
@@ -43,11 +50,19 @@ async function runSearch(country, jobTitle, keywords, lang = 'fr') {
     
     // Traitement par IA et stockage SQLite
     for (const job of allJobs) {
-        console.log(`📝 Analyse : ${job.title} chez ${job.company}`);
-        const offerText = `Titre: ${job.title}\nEntreprise: ${job.company}\nLien: ${job.link}`;
+        console.log(`📝 Traitement : ${job.title} chez ${job.company}`);
+        const offerText = `Titre: ${job.title}
+Entreprise: ${job.company}
+Lien: ${job.link}`;
         
         try {
-            const result = await analyzeJob(offerText, cvPath, lang);
+            // 1. Sélection intelligente du CV
+            const bestCvId = await selectBestCv(offerText, cvsWithContent);
+            const selectedCv = cvsWithContent.find(cv => cv.id === bestCvId);
+            console.log(`🎯 CV choisi : ${selectedCv.name} (ID: ${bestCvId})`);
+            
+            // 2. Analyse et génération de la lettre
+            const result = await analyzeJob(offerText, selectedCv.path, lang);
             console.log(`📊 Score : ${result.score}/100`);
             
             // Sauvegarde SQLite

@@ -50,7 +50,41 @@ function simulateAnalysis() {
 }
 
 /**
+ * Sélectionne le meilleur CV parmi une liste en fonction de l'offre.
+ * @param {string} offerText - Texte de l'offre
+ * @param {Array} cvs - Liste des CV [{id, name, content}, ...]
+ * @returns {Promise<number>} - L'ID du meilleur CV
+ */
+export async function selectBestCv(offerText, cvs) {
+    if (cvs.length === 1) return cvs[0].id;
+
+    const cvSummaries = cvs.map(cv => `ID ${cv.id} (${cv.name}): ${cv.content.substring(0, 500)}...`).join('\\n\\n');
+    
+    const prompt = `Tu es un expert en recrutement.
+Voici une offre d'emploi :
+---
+${offerText}
+---
+Et voici plusieurs versions d'un CV pour le même candidat :
+---
+${cvSummaries}
+---
+Lequel de ces CV est le plus adapté pour postuler à cette offre ? 
+Réponds UNIQUEMENT avec l'ID du CV choisi (un nombre).`;
+
+    try {
+        console.log("🤖 IA sélectionne le meilleur CV...");
+        const idString = await callGemini(prompt);
+        return parseInt(idString.trim());
+    } catch (err) {
+        console.warn(`⚠️ Erreur sélection CV : ${err.message}. Choix par défaut...`);
+        return cvs[0].id;
+    }
+}
+
+/**
  * Analyse une offre et génère une candidature avec fallback multi-IA et simulation.
+...
  * @param {string} offerText - Texte de l'offre
  * @param {string} cvPath - Chemin vers le CV
  * @param {string} lang - Langue (fr, en, de)
@@ -59,22 +93,34 @@ function simulateAnalysis() {
 export async function analyzeJob(offerText, cvPath, lang = 'fr') {
     const cvContent = await fs.readFile(cvPath, 'utf-8');
     const langName = lang === 'fr' ? 'français' : lang === 'en' ? 'anglais' : 'allemand';
-    
-    const prompt = `Tu es un expert en recrutement.
-À partir du CV suivant :
+
+    const prompt = `Tu es un expert en recrutement de haut niveau et un spécialiste en copywriting de carrière.
+Ton objectif est d'analyser l'adéquation entre un candidat et une offre d'emploi pour maximiser les chances d'obtenir un entretien.
+
+CONTEXTE :
+- CV du candidat : 
 ---
 ${cvContent}
 ---
-Et de l'offre d'emploi suivante :
+- Offre d'emploi : 
 ---
 ${offerText}
 ---
-Rédige une lettre de motivation convaincante en ${langName}.
+
+CONSIGNES D'ANALYSE :
+1. **Scoring (0-100)** : Sois sévère. 100% signifie que le candidat coche absolument toutes les cases. 70% est un très bon profil. En dessous de 50%, le profil est insuffisant.
+2. **Analyse Critique** : Identifie précisément les "Hard Skills" manquantes et les "Soft Skills" à mettre en avant.
+3. **Lettre de Motivation** : Rédige une lettre percutante en ${langName} en suivant cette structure :
+   - **L'Accroche** : Capte l'attention immédiatement en liant un succès du candidat à un besoin de l'entreprise.
+   - **La Proposition de Valeur** : Ne liste pas les compétences, prouve-les par des résultats concrets issus du CV.
+   - **L'Appel à l'Action (CTA)** : Termine par une demande d'entretien directe et confiante.
+   - **Style** : Professionnel, moderne, sans clichés (évite "Je suis dynamique et motivé").
+
 Réponds UNIQUEMENT en JSON avec la structure suivante :
 {
-  "score": <score de 0 à 100>,
-  "letter": "<lettre de motivation convaincante, max 300 mots>",
-  "analysis": "<analyse des points forts et des lacunes par rapport au CV>"
+  "score": <nombre>,
+  "letter": "<lettre de motivation optimisée, max 300 mots>",
+  "analysis": "POINTS FORTS : \\n- ...\\n\\nLACUNES : \\n- ...\\n\\nCONSEILS : \\n- ..."
 }`;
 
     try {

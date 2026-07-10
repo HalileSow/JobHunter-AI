@@ -29,3 +29,10 @@ export async function getActiveCvPath() {
     await db.close();
     return cv ? cv.path : null;
 }
+
+export async function getAllCvs() {
+    const db = await initDb();
+    const cvs = await db.all('SELECT id, name, path FROM cvs');
+    await db.close();
+    return cvs;
+}

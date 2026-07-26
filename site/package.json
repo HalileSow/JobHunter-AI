@@ -3,7 +3,8 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "start": "node server.mjs"
+    "start": "node server.mjs",
+    "test": "node --check server.mjs && node --check app.js"
   },
   "dependencies": {
     "cors": "^2.8.6",

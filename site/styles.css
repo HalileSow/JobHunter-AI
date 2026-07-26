@@ -323,3 +323,13 @@ header p {
     border-radius: 6px;
     cursor: pointer;
 }
+
+.btn-active:disabled {
+    cursor: default;
+    opacity: 0.65;
+}
+
+.empty-state {
+    color: var(--text-muted);
+    padding: 1.5rem 0;
+}

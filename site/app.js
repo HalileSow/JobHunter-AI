@@ -5,7 +5,15 @@ async function api(endpoint, method = 'GET', body = null) {
     };
     if (body) options.body = JSON.stringify(body);
     const response = await fetch(`/api${endpoint}`, options);
-    return response.json();
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || 'Une erreur est survenue.');
+    return data;
+}
+
+function escapeHtml(value = '') {
+    return String(value).replace(/[&<>'"]/g, (character) => ({
+        '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;'
+    }[character]));
 }
 
 // Tab Management
@@ -33,14 +41,14 @@ async function loadJobs() {
     const avg = jobs.length ? Math.round(jobs.reduce((a, b) => a + b.score, 0) / jobs.length) : 0;
     avgEl.textContent = `${avg}%`;
     
-    list.innerHTML = jobs.map(job => `
+    list.innerHTML = jobs.length ? jobs.map(job => `
         <div class="job-card">
             <span class="score-badge">${job.score}%</span>
-            <h3>${job.title}</h3>
-            <span class="company">${job.company}</span>
-            <div class="analysis">${job.analysis.substring(0, 150)}...</div>
+            <h3>${escapeHtml(job.title)}</h3>
+            <span class="company">${escapeHtml(job.company)}</span>
+            <div class="analysis">${escapeHtml((job.analysis || 'Analyse indisponible.').substring(0, 150))}...</div>
             <div class="actions">
-                <a href="/cover_letters/generated/${job.company.replace(/\s+/g, '_')}_letter_fr.pdf" target="_blank" class="btn-outline">
+                <a href="/api/jobs/${job.id}/pdf" target="_blank" class="btn-outline">
                     <i class="fas fa-file-pdf"></i> PDF
                 </a>
                 <button onclick="deleteJob(${job.id})" class="btn-danger">
@@ -48,7 +56,7 @@ async function loadJobs() {
                 </button>
             </div>
         </div>
-    `).join('');
+    `).join('') : '<p class="empty-state">Aucune offre analysée pour le moment.</p>';
 }
 
 async function deleteJob(id) {
@@ -75,12 +83,12 @@ document.getElementById('btn-launch-search').addEventListener('click', async () 
     
     try {
         await api('/search', 'POST', data);
-        alert('🚀 Recherche lancée ! Les résultats apparaîtront dans le Dashboard d'ici quelques minutes.');
+        alert("Recherche lancée. Les résultats apparaîtront dans le tableau de bord dès la fin du traitement.");
     } catch (e) {
-        alert('Erreur lors du lancement.');
+        alert(e.message);
     } finally {
         btn.disabled = false;
-        btn.innerHTML = '<i class="fas fa-play"></i> Lancer l'Automatisation';
+        btn.innerHTML = '<i class="fas fa-play"></i> Lancer l’Automatisation';
     }
 });
 
@@ -88,15 +96,24 @@ document.getElementById('btn-launch-search').addEventListener('click', async () 
 async function loadCvs() {
     const cvs = await api('/cvs');
     const list = document.getElementById('cv-list');
-    list.innerHTML = cvs.map(cv => `
+    list.innerHTML = cvs.length ? cvs.map(cv => `
         <div class="cv-card">
             <div>
-                <h3>${cv.name}</h3>
-                <p>${cv.path}</p>
+                <h3>${escapeHtml(cv.name)}</h3>
+                <p>${cv.is_active ? 'CV actif' : 'CV disponible'}</p>
             </div>
-            <button class="btn-active">Activer</button>
+            <button onclick="activateCv(${cv.id})" class="btn-active" ${cv.is_active ? 'disabled' : ''}>${cv.is_active ? 'Actif' : 'Activer'}</button>
         </div>
-    `).join('');
+    `).join('') : '<p class="empty-state">Aucun CV enregistré.</p>';
+}
+
+async function activateCv(id) {
+    try {
+        await api(`/cvs/${id}/active`, 'PUT');
+        await loadCvs();
+    } catch (error) {
+        alert(error.message);
+    }
 }
 
 // Init

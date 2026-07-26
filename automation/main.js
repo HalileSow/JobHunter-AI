@@ -16,7 +16,7 @@ async function loadConfig() {
 }
 
 
-async function runSearch(country, jobTitle, keywords, lang = 'fr') {
+export async function runSearch(country, jobTitle, keywords, lang = 'fr') {
     const config = await loadConfig();
     const db = await initDb();
     
@@ -58,23 +58,24 @@ Lien: ${job.link}`;
         try {
             // 1. Sélection intelligente du CV
             const bestCvId = await selectBestCv(offerText, cvsWithContent);
-            const selectedCv = cvsWithContent.find(cv => cv.id === bestCvId);
+            const selectedCv = cvsWithContent.find(cv => cv.id === bestCvId) || cvsWithContent[0];
             console.log(`🎯 CV choisi : ${selectedCv.name} (ID: ${bestCvId})`);
             
             // 2. Analyse et génération de la lettre
             const result = await analyzeJob(offerText, selectedCv.path, lang);
             console.log(`📊 Score : ${result.score}/100`);
             
-            // Sauvegarde SQLite
-            await db.run(
-                'INSERT INTO jobs (title, company, link, country, score, letter, analysis, salary, contract_type, date_posted) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
-                [job.title, job.company, job.link, country, result.score, result.letter, result.analysis, job.salary, job.contract_type, job.date_posted]
-            );
-            
             // Export PDF
             const filename = `${job.company.replace(/\s+/g, '_')}_letter_${lang}.pdf`;
             const pdfPath = path.resolve(__dirname, `../cover_letters/generated/${filename}`);
+            await fs.mkdir(path.dirname(pdfPath), { recursive: true });
             await exportLetterToPdf(result.letter, job.company, pdfPath);
+
+            // Sauvegarde SQLite uniquement après la génération réussie du dossier.
+            await db.run(
+                'INSERT INTO jobs (title, company, link, country, score, letter, analysis, salary, contract_type, date_posted, selected_cv_id, pdf_path) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+                [job.title, job.company, job.link, country, result.score, result.letter, result.analysis, job.salary, job.contract_type, job.date_posted, selectedCv.id, pdfPath]
+            );
             
             console.log(`💾 Candidature et PDF prêts : ${pdfPath}`);
         } catch (err) {
@@ -86,7 +87,10 @@ Lien: ${job.link}`;
 
 const [,, country, title, keywords, lang] = process.argv;
 if (country && title) {
-    runSearch(country, title, keywords || "", lang || 'fr');
+    runSearch(country, title, keywords || "", lang || 'fr').catch((error) => {
+        console.error(`❌ Échec du workflow : ${error.message}`);
+        process.exitCode = 1;
+    });
 } else {
     console.log("Usage: node main.js <Pays> <Métier> <Mots-clés> [lang: fr|en|de]");
 }

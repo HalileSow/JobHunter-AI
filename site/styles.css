@@ -252,6 +252,27 @@ header p {
     max-width: 600px;
 }
 
+.search-history { margin-top: 2rem; max-width: 600px; }
+.search-history h2 { font-size: 1.2rem; margin-bottom: 1rem; }
+.runs-list { display: grid; gap: 0.75rem; }
+.run-card {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 1rem;
+    display: grid;
+    grid-template-columns: 1fr auto;
+    gap: 0.5rem;
+}
+.run-card strong, .run-card span { display: block; }
+.run-card div > span { color: var(--text-muted); font-size: 0.9rem; margin-top: 0.25rem; }
+.run-status { border-radius: 999px; height: fit-content; padding: 0.25rem 0.65rem; font-size: 0.8rem; }
+.status-queued { background: #475569; }
+.status-running { background: #2563eb; }
+.status-completed { background: var(--accent); }
+.status-failed { background: var(--danger); }
+.run-error { grid-column: 1 / -1; color: #fca5a5; font-size: 0.85rem; }
+
 .form-group {
     margin-bottom: 1.5rem;
     display: flex;

@@ -26,6 +26,7 @@ document.querySelectorAll('.nav-item').forEach(btn => {
         document.getElementById(btn.dataset.tab).classList.add('active');
         
         if (btn.dataset.tab === 'dashboard') loadJobs();
+        if (btn.dataset.tab === 'search') loadSearchRuns();
         if (btn.dataset.tab === 'cvs') loadCvs();
         if (btn.dataset.tab === 'settings') loadProfile();
     });
@@ -85,6 +86,7 @@ document.getElementById('btn-launch-search').addEventListener('click', async () 
     try {
         await api('/search', 'POST', data);
         alert("Recherche lancée. Les résultats apparaîtront dans le tableau de bord dès la fin du traitement.");
+        loadSearchRuns();
     } catch (e) {
         alert(e.message);
     } finally {
@@ -106,6 +108,32 @@ async function loadCvs() {
             <button onclick="activateCv(${cv.id})" class="btn-active" ${cv.is_active ? 'disabled' : ''}>${cv.is_active ? 'Actif' : 'Activer'}</button>
         </div>
     `).join('') : '<p class="empty-state">Aucun CV enregistré.</p>';
+}
+
+const runStatusLabels = {
+    queued: 'En attente',
+    running: 'En cours',
+    completed: 'Terminée',
+    failed: 'Échouée'
+};
+
+async function loadSearchRuns() {
+    try {
+        const runs = await api('/search-runs');
+        const list = document.getElementById('search-runs-list');
+        list.innerHTML = runs.length ? runs.map((run) => `
+            <article class="run-card">
+                <div>
+                    <strong>${escapeHtml(run.title)}</strong>
+                    <span>${escapeHtml(run.country)}${run.keywords ? ` · ${escapeHtml(run.keywords)}` : ''}</span>
+                </div>
+                <span class="run-status status-${escapeHtml(run.status)}">${runStatusLabels[run.status] || 'Inconnue'}</span>
+                ${run.error ? `<p class="run-error">${escapeHtml(run.error)}</p>` : ''}
+            </article>
+        `).join('') : '<p class="empty-state">Aucune recherche lancée.</p>';
+    } catch (error) {
+        document.getElementById('search-runs-list').innerHTML = `<p class="empty-state">${escapeHtml(error.message)}</p>`;
+    }
 }
 
 async function activateCv(id) {

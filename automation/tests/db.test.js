@@ -35,5 +35,7 @@ test('initialise le schéma complet et enregistre une offre', async () => {
 
     const searchRuns = await db.all("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'search_runs'");
     assert.equal(searchRuns.length, 1);
+    const cv = await db.get('SELECT name, is_active FROM cvs');
+    assert.deepEqual(cv, { name: 'CV français', is_active: 1 });
     await db.close();
 });

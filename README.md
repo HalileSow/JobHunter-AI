@@ -15,9 +15,15 @@ Dossier de candidature multilingue pour Ibrahima Sow.
 
 ## Site local
 
-Ouvrir `site/index.html` dans un navigateur.
+```bash
+cd site
+npm ci
+npm start
+```
 
-La photo de profil se charge depuis le bouton `Importer une photo` et reste enregistrée dans le navigateur.
+Ouvrir `http://localhost:4173`. L’interface et toutes les options utilisateur sont en français.
+
+Le détail du déploiement Docker, Railway ou Render est disponible dans [docs/deploiement.md](docs/deploiement.md).
 
 ## Profil
 

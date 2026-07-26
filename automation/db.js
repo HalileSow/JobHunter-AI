@@ -1,5 +1,6 @@
 import sqlite3 from 'sqlite3';
 import { open } from 'sqlite';
+import fs from 'fs/promises';
 import path from 'path';
 import { fileURLToPath } from 'url';
 
@@ -16,6 +17,19 @@ async function addColumnIfMissing(db, table, definition) {
     const columns = await db.all(`PRAGMA table_info(${table})`);
     if (!columns.some(({ name }) => name === column)) {
         await db.exec(`ALTER TABLE ${table} ADD COLUMN ${definition}`);
+    }
+}
+
+async function seedDefaultCv(db) {
+    const existingCv = await db.get('SELECT id FROM cvs LIMIT 1');
+    if (existingCv) return;
+
+    const defaultCvPath = path.resolve(__dirname, '../cv/cv_fr.md');
+    try {
+        await fs.access(defaultCvPath);
+        await db.run('INSERT INTO cvs (name, path, is_active) VALUES (?, ?, 1)', ['CV français', defaultCvPath]);
+    } catch {
+        // Le CV peut être ajouté plus tard depuis l’interface ; l’initialisation de la base reste possible.
     }
 }
 
@@ -89,6 +103,7 @@ async function initDb() {
     await addColumnIfMissing(db, 'jobs', 'date_posted TEXT');
     await addColumnIfMissing(db, 'jobs', 'selected_cv_id INTEGER');
     await addColumnIfMissing(db, 'jobs', 'pdf_path TEXT');
+    await seedDefaultCv(db);
     return db;
 }
 

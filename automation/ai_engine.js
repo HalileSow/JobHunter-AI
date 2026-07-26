@@ -138,3 +138,9 @@ Réponds UNIQUEMENT en JSON avec la structure suivante :
         }
     }
 }
+
+/** Génère uniquement la lettre de motivation pour la commande historique. */
+export async function generateLetter(offerText, cvPath, lang = 'fr') {
+    const result = await analyzeJob(offerText, cvPath, lang);
+    return result.letter;
+}

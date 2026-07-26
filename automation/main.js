@@ -53,7 +53,8 @@ export async function runSearch(country, jobTitle, keywords, lang = 'fr') {
         console.log(`📝 Traitement : ${job.title} chez ${job.company}`);
         const offerText = `Titre: ${job.title}
 Entreprise: ${job.company}
-Lien: ${job.link}`;
+Lien: ${job.link}
+Description: ${job.description || 'Description non fournie par la source.'}`;
         
         try {
             // 1. Sélection intelligente du CV

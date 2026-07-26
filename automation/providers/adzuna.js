@@ -14,10 +14,8 @@ export async function searchJobs(country, jobTitle, keywords) {
         const appKey = process.env.ADZUNA_APP_KEY;
         
         if (!appId || !appKey) {
-            console.warn("⚠️ API Adzuna non configurée (clés manquantes). Retour du mock.");
-            return [
-                { title: `Développeur ${jobTitle}`, company: "Tech Europe", link: "https://adzuna.com/job/1", salary: "50k-60k", contract_type: "CDI", date_posted: "2026-07-08" }
-            ];
+            console.warn("⚠️ API Adzuna non configurée (clés manquantes). Ce fournisseur est ignoré.");
+            return [];
         }
 
         const url = `https://api.adzuna.com/v1/api/jobs/${countryCode}/search/1?app_id=${appId}&app_key=${appKey}&results_per_page=10&what=${encodeURIComponent(jobTitle + " " + keywords)}`;
@@ -29,7 +27,8 @@ export async function searchJobs(country, jobTitle, keywords) {
             link: job.redirect_url,
             salary: job.salary_min ? `${job.salary_min}-${job.salary_max}` : "N/A",
             contract_type: "Full-time", // Adzuna API n'est pas toujours explicite
-            date_posted: job.created.split('T')[0]
+            date_posted: job.created.split('T')[0],
+            description: job.description || ''
         }));
     } catch (err) {
         console.error("❌ Erreur API Adzuna:", err.message);

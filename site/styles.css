@@ -273,6 +273,46 @@ header p {
     font-size: 1rem;
 }
 
+.form-group textarea {
+    background: var(--bg-dark);
+    border: 1px solid var(--border);
+    padding: 0.8rem;
+    border-radius: 8px;
+    color: white;
+    font: inherit;
+    resize: vertical;
+}
+
+.settings-card {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    max-width: 760px;
+    padding: 2rem;
+}
+
+.settings-card h3 { margin-bottom: 1.5rem; }
+
+.form-row {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 1rem;
+}
+
+.form-feedback { color: var(--accent); margin-top: 1rem; }
+
+@media (max-width: 700px) {
+    body, .app-container { min-height: 100vh; height: auto; overflow: visible; }
+    .app-container { flex-direction: column; }
+    .sidebar { width: 100%; padding: 1rem; }
+    .logo { margin-bottom: 1rem; }
+    nav { flex-direction: row; overflow-x: auto; flex-grow: 0; }
+    .nav-item { white-space: nowrap; }
+    .user-profile { display: none; }
+    .main-content { padding: 1.5rem 1rem; overflow: visible; }
+    .stats-bar, .form-row { grid-template-columns: 1fr; flex-direction: column; }
+}
+
 .btn-primary {
     background: var(--primary);
     color: white;

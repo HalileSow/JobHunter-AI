@@ -27,6 +27,7 @@ document.querySelectorAll('.nav-item').forEach(btn => {
         
         if (btn.dataset.tab === 'dashboard') loadJobs();
         if (btn.dataset.tab === 'cvs') loadCvs();
+        if (btn.dataset.tab === 'settings') loadProfile();
     });
 });
 
@@ -115,6 +116,52 @@ async function activateCv(id) {
         alert(error.message);
     }
 }
+
+function setProfileValue(id, value = '') {
+    document.getElementById(id).value = value || '';
+}
+
+async function loadProfile() {
+    try {
+        const profile = await api('/profile');
+        setProfileValue('profile-first-name', profile.first_name);
+        setProfileValue('profile-last-name', profile.last_name);
+        setProfileValue('profile-email', profile.email);
+        setProfileValue('profile-phone', profile.phone);
+        setProfileValue('profile-address', profile.address);
+        setProfileValue('profile-nationality', profile.nationality);
+        setProfileValue('profile-availability', profile.availability);
+        setProfileValue('profile-skills', Array.isArray(profile.skills) ? profile.skills.join(', ') : JSON.parse(profile.skills || '[]').join(', '));
+        setProfileValue('profile-experience', profile.experience);
+        setProfileValue('profile-education', profile.education);
+    } catch (error) {
+        document.getElementById('profile-feedback').textContent = error.message;
+    }
+}
+
+document.getElementById('profile-form').addEventListener('submit', async (event) => {
+    event.preventDefault();
+    const feedback = document.getElementById('profile-feedback');
+    const skills = document.getElementById('profile-skills').value.split(',').map((skill) => skill.trim()).filter(Boolean);
+    const profile = {
+        first_name: document.getElementById('profile-first-name').value,
+        last_name: document.getElementById('profile-last-name').value,
+        email: document.getElementById('profile-email').value,
+        phone: document.getElementById('profile-phone').value,
+        address: document.getElementById('profile-address').value,
+        nationality: document.getElementById('profile-nationality').value,
+        availability: document.getElementById('profile-availability').value,
+        skills,
+        experience: document.getElementById('profile-experience').value,
+        education: document.getElementById('profile-education').value
+    };
+    try {
+        await api('/profile', 'PUT', profile);
+        feedback.textContent = 'Profil enregistré.';
+    } catch (error) {
+        feedback.textContent = error.message;
+    }
+});
 
 // Init
 loadJobs();

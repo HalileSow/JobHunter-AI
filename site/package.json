@@ -4,7 +4,7 @@
   "type": "module",
   "scripts": {
     "start": "node server.mjs",
-    "test": "node --check server.mjs && node --check app.js"
+    "test": "node --check server.mjs && node --check app.js && node tests/api.smoke.mjs"
   },
   "dependencies": {
     "cors": "^2.8.6",

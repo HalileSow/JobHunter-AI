@@ -97,12 +97,32 @@
             <!-- TAB: SETTINGS -->
             <section id="settings" class="tab-content">
                 <header>
-                    <h1>Paramètres</h1>
+                    <h1>Mon profil</h1>
+                    <p>Ces informations servent à préparer les candidatures et les documents.</p>
                 </header>
                 <div class="settings-grid">
                     <div class="settings-card">
-                        <h3>Configuration IA</h3>
-                        <p>L'IA utilise actuellement Gemini et OpenAI en fallback.</p>
+                        <h3>Informations personnelles</h3>
+                        <form id="profile-form" class="profile-form">
+                            <div class="form-row">
+                                <div class="form-group"><label for="profile-first-name">Prénom</label><input id="profile-first-name" autocomplete="given-name"></div>
+                                <div class="form-group"><label for="profile-last-name">Nom</label><input id="profile-last-name" autocomplete="family-name"></div>
+                            </div>
+                            <div class="form-row">
+                                <div class="form-group"><label for="profile-email">E-mail</label><input id="profile-email" type="email" autocomplete="email"></div>
+                                <div class="form-group"><label for="profile-phone">Téléphone</label><input id="profile-phone" type="tel" autocomplete="tel"></div>
+                            </div>
+                            <div class="form-group"><label for="profile-address">Adresse</label><input id="profile-address" autocomplete="street-address"></div>
+                            <div class="form-row">
+                                <div class="form-group"><label for="profile-nationality">Nationalité</label><input id="profile-nationality"></div>
+                                <div class="form-group"><label for="profile-availability">Disponibilité</label><input id="profile-availability" placeholder="Ex. immédiatement"></div>
+                            </div>
+                            <div class="form-group"><label for="profile-skills">Compétences (séparées par des virgules)</label><input id="profile-skills" placeholder="Ex. accueil, vente, Excel"></div>
+                            <div class="form-group"><label for="profile-experience">Expérience</label><textarea id="profile-experience" rows="3"></textarea></div>
+                            <div class="form-group"><label for="profile-education">Formation</label><textarea id="profile-education" rows="3"></textarea></div>
+                            <button class="btn-primary" type="submit">Enregistrer le profil</button>
+                            <p id="profile-feedback" class="form-feedback" aria-live="polite"></p>
+                        </form>
                     </div>
                 </div>
             </section>

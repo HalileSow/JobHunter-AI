@@ -73,17 +73,26 @@ Description: ${job.description || 'Description non fournie par la source.'}`;
             await exportLetterToPdf(result.letter, job.company, pdfPath);
 
             // Sauvegarde SQLite uniquement après la génération réussie du dossier.
-            await db.run(
-                'INSERT INTO jobs (title, company, link, country, score, letter, analysis, salary, contract_type, date_posted, selected_cv_id, pdf_path) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
-                [job.title, job.company, job.link, country, result.score, result.letter, result.analysis, job.salary, job.contract_type, job.date_posted, selectedCv.id, pdfPath]
-            );
+            await db('jobs').insert({
+                title: job.title,
+                company: job.company,
+                link: job.link,
+                country: country,
+                score: result.score,
+                letter: result.letter,
+                analysis: result.analysis,
+                salary: job.salary,
+                contract_type: job.contract_type,
+                date_posted: job.date_posted,
+                selected_cv_id: selectedCv.id,
+                pdf_path: pdfPath
+            });
             
             console.log(`💾 Candidature et PDF prêts : ${pdfPath}`);
         } catch (err) {
             console.error(`❌ Erreur IA pour ${job.company}:`, err.message);
         }
     }
-    await db.close();
 }
 
 const [,, country, title, keywords, lang] = process.argv;

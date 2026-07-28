@@ -25,11 +25,7 @@ function optionalText(value) {
 
 async function withDb(operation) {
     const db = await initDb();
-    try {
-        return await operation(db);
-    } finally {
-        await db.close();
-    }
+    return await operation(db);
 }
 
 function createApp() {
@@ -49,7 +45,7 @@ function createApp() {
 
     app.get('/api/jobs', async (req, res) => {
         try {
-            const jobs = await withDb((db) => db.all('SELECT * FROM jobs ORDER BY created_at DESC, id DESC'));
+            const jobs = await withDb((db) => db('jobs').select('*').orderBy('created_at', 'desc').orderBy('id', 'desc'));
             res.json(jobs);
         } catch {
             res.status(500).json({ error: 'Impossible de charger les offres.' });
@@ -58,8 +54,8 @@ function createApp() {
 
     app.delete('/api/jobs/:id', async (req, res) => {
         try {
-            const result = await withDb((db) => db.run('DELETE FROM jobs WHERE id = ?', [req.params.id]));
-            if (!result.changes) return res.status(404).json({ error: 'Offre introuvable.' });
+            const changes = await withDb((db) => db('jobs').where({ id: req.params.id }).del());
+            if (!changes) return res.status(404).json({ error: 'Offre introuvable.' });
             res.json({ success: true });
         } catch {
             res.status(500).json({ error: 'Impossible de supprimer cette offre.' });
@@ -68,7 +64,7 @@ function createApp() {
 
     app.get('/api/jobs/:id/pdf', async (req, res) => {
         try {
-            const job = await withDb((db) => db.get('SELECT pdf_path FROM jobs WHERE id = ?', [req.params.id]));
+            const job = await withDb((db) => db('jobs').where({ id: req.params.id }).select('pdf_path').first());
             if (!job?.pdf_path) return res.status(404).json({ error: 'PDF introuvable.' });
             const pdfPath = path.resolve(job.pdf_path);
             if (!pdfPath.startsWith(`${generatedLettersDirectory}${path.sep}`)) {
@@ -84,7 +80,7 @@ function createApp() {
 
     app.get('/api/cvs', async (req, res) => {
         try {
-            const cvs = await withDb((db) => db.all('SELECT id, name, path, is_active, created_at FROM cvs ORDER BY is_active DESC, created_at DESC'));
+            const cvs = await withDb((db) => db('cvs').select('id', 'name', 'path', 'is_active', 'created_at').orderBy('is_active', 'desc').orderBy('created_at', 'desc'));
             res.json(cvs);
         } catch {
             res.status(500).json({ error: 'Impossible de charger les CV.' });
@@ -94,17 +90,12 @@ function createApp() {
     app.put('/api/cvs/:id/active', async (req, res) => {
         try {
             const found = await withDb(async (db) => {
-                const cv = await db.get('SELECT id FROM cvs WHERE id = ?', [req.params.id]);
+                const cv = await db('cvs').where({ id: req.params.id }).select('id').first();
                 if (!cv) return false;
-                await db.exec('BEGIN');
-                try {
-                    await db.run('UPDATE cvs SET is_active = 0');
-                    await db.run('UPDATE cvs SET is_active = 1 WHERE id = ?', [req.params.id]);
-                    await db.exec('COMMIT');
-                } catch (error) {
-                    await db.exec('ROLLBACK');
-                    throw error;
-                }
+                await db.transaction(async (trx) => {
+                    await trx('cvs').update({ is_active: 0 });
+                    await trx('cvs').where({ id: req.params.id }).update({ is_active: 1 });
+                });
                 return true;
             });
             if (!found) return res.status(404).json({ error: 'CV introuvable.' });
@@ -116,7 +107,7 @@ function createApp() {
 
     app.get('/api/profile', async (req, res) => {
         try {
-            const profile = await withDb((db) => db.get('SELECT * FROM profile WHERE id = 1'));
+            const profile = await withDb((db) => db('profile').where({ id: 1 }).first());
             res.json(profile || {});
         } catch {
             res.status(500).json({ error: 'Impossible de charger le profil.' });
@@ -126,15 +117,26 @@ function createApp() {
     app.put('/api/profile', async (req, res) => {
         try {
             const profile = req.body || {};
-            await withDb((db) => db.run(
-                `INSERT INTO profile (id, first_name, last_name, dob, nationality, address, phone, email, photo_path, languages, skills, experience, education, availability)
-                 VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                 ON CONFLICT(id) DO UPDATE SET first_name = excluded.first_name, last_name = excluded.last_name, dob = excluded.dob,
-                 nationality = excluded.nationality, address = excluded.address, phone = excluded.phone, email = excluded.email,
-                 photo_path = excluded.photo_path, languages = excluded.languages, skills = excluded.skills, experience = excluded.experience,
-                 education = excluded.education, availability = excluded.availability`,
-                [optionalText(profile.first_name), optionalText(profile.last_name), optionalText(profile.dob), optionalText(profile.nationality), optionalText(profile.address), optionalText(profile.phone), optionalText(profile.email), optionalText(profile.photo_path), JSON.stringify(Array.isArray(profile.languages) ? profile.languages : []), JSON.stringify(Array.isArray(profile.skills) ? profile.skills : []), optionalText(profile.experience), optionalText(profile.education), optionalText(profile.availability)]
-            ));
+            await withDb((db) => db('profile')
+                .insert({
+                    id: 1,
+                    first_name: optionalText(profile.first_name),
+                    last_name: optionalText(profile.last_name),
+                    dob: optionalText(profile.dob),
+                    nationality: optionalText(profile.nationality),
+                    address: optionalText(profile.address),
+                    phone: optionalText(profile.phone),
+                    email: optionalText(profile.email),
+                    photo_path: optionalText(profile.photo_path),
+                    languages: JSON.stringify(Array.isArray(profile.languages) ? profile.languages : []),
+                    skills: JSON.stringify(Array.isArray(profile.skills) ? profile.skills : []),
+                    experience: optionalText(profile.experience),
+                    education: optionalText(profile.education),
+                    availability: optionalText(profile.availability)
+                })
+                .onConflict('id')
+                .merge()
+            );
             res.json({ success: true });
         } catch {
             res.status(500).json({ error: 'Impossible d’enregistrer le profil.' });
@@ -143,7 +145,7 @@ function createApp() {
 
     app.get('/api/search-runs', async (req, res) => {
         try {
-            const runs = await withDb((db) => db.all('SELECT * FROM search_runs ORDER BY created_at DESC, id DESC LIMIT 20'));
+            const runs = await withDb((db) => db('search_runs').select('*').orderBy('created_at', 'desc').orderBy('id', 'desc').limit(20));
             res.json(runs);
         } catch {
             res.status(500).json({ error: 'Impossible de charger les recherches.' });
@@ -157,8 +159,8 @@ function createApp() {
             const keywords = optionalText(req.body?.keywords);
             const lang = allowedLanguages.has(req.body?.lang) ? req.body.lang : 'fr';
             const run = await withDb(async (db) => {
-                const result = await db.run('INSERT INTO search_runs (country, title, keywords, lang, status) VALUES (?, ?, ?, ?, ?)', [country, title, keywords, lang, 'queued']);
-                return { id: result.lastID };
+                const [id] = await db('search_runs').insert({ country, title, keywords, lang, status: 'queued' });
+                return { id };
             });
 
             const child = spawn(process.execPath, [automationScript, country, title, keywords, lang], {
@@ -168,15 +170,15 @@ function createApp() {
             });
             child.unref();
             child.once('spawn', () => {
-                withDb((db) => db.run("UPDATE search_runs SET status = 'running', started_at = CURRENT_TIMESTAMP WHERE id = ?", [run.id])).catch(console.error);
+                withDb((db) => db('search_runs').where({ id: run.id }).update({ status: 'running', started_at: db.fn.now() })).catch(console.error);
             });
             child.once('error', (error) => {
-                withDb((db) => db.run("UPDATE search_runs SET status = 'failed', error = ?, finished_at = CURRENT_TIMESTAMP WHERE id = ?", [error.message, run.id])).catch(console.error);
+                withDb((db) => db('search_runs').where({ id: run.id }).update({ status: 'failed', error: error.message, finished_at: db.fn.now() })).catch(console.error);
             });
             child.once('close', (code) => {
                 const status = code === 0 ? 'completed' : 'failed';
                 const error = code === 0 ? null : `Le workflow s’est arrêté avec le code ${code}.`;
-                withDb((db) => db.run('UPDATE search_runs SET status = ?, error = ?, finished_at = CURRENT_TIMESTAMP WHERE id = ?', [status, error, run.id])).catch(console.error);
+                withDb((db) => db('search_runs').where({ id: run.id }).update({ status, error, finished_at: db.fn.now() })).catch(console.error);
             });
             res.status(202).json({ success: true, runId: run.id, message: 'Recherche lancée.' });
         } catch (error) {

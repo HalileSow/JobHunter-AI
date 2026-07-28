@@ -1,0 +1,18 @@
+{
+  "name": "jobhunter-ai",
+  "version": "1.0.0",
+  "description": "Plateforme professionnelle pour trouver un emploi en Europe",
+  "type": "module",
+  "private": true,
+  "devDependencies": {
+    "knex": "^3.1.0"
+  },
+  "dependencies": {
+    "dotenv": "^16.0.0",
+    "pg": "^8.13.0",
+    "sqlite3": "^6.0.1"
+  },
+  "allowScripts": {
+    "sqlite3@6.0.1": true
+  }
+}

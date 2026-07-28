@@ -1,11 +1,15 @@
 import express from 'express';
 import cors from 'cors';
+import jwt from 'jsonwebtoken';
+import bcrypt from 'bcrypt';
 import { spawn } from 'node:child_process';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { initDb } from '../automation/db.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
+// TODO: Set JWT_SECRET in production to a strong, random string.
+const JWT_SECRET = process.env.JWT_SECRET || 'dev-secret-key';
 const automationDirectory = path.join(__dirname, '..', 'automation');
 const automationScript = path.join(automationDirectory, 'main.js');
 const generatedLettersDirectory = path.join(__dirname, '..', 'cover_letters', 'generated');
@@ -28,6 +32,18 @@ async function withDb(operation) {
     return await operation(db);
 }
 
+function auth(req, res, next) {
+    const authHeader = req.headers['authorization'];
+    const token = authHeader && authHeader.split(' ')[1];
+    if (!token) return res.status(401).json({ error: 'Accès non autorisé.' });
+    
+    jwt.verify(token, JWT_SECRET, (err, user) => {
+        if (err) return res.status(403).json({ error: 'Token invalide.' });
+        req.user = user;
+        next();
+    });
+}
+
 function createApp() {
     const app = express();
     app.use(cors());
@@ -42,6 +58,42 @@ function createApp() {
             res.status(503).json({ error: 'Base de données indisponible.' });
         }
     });
+
+    app.post('/api/auth/register', async (req, res) => {
+        try {
+            const { email, password } = req.body;
+            requiredText(email, 'Email');
+            requiredText(password, 'Mot de passe');
+            const hashedPassword = await bcrypt.hash(password, 10);
+            await withDb((db) => db('users').insert({ email, password: hashedPassword }));
+            res.status(201).json({ success: true });
+        } catch (error) {
+            if (error.message.includes('SQLITE_CONSTRAINT')) {
+                res.status(409).json({ error: 'Utilisateur déjà existant.' });
+            } else {
+                res.status(500).json({ error: 'Erreur lors de l’enregistrement.' });
+            }
+        }
+    });
+
+    app.post('/api/auth/login', async (req, res) => {
+        try {
+            const { email, password } = req.body;
+            requiredText(email, 'Email');
+            requiredText(password, 'Mot de passe');
+            const user = await withDb((db) => db('users').where({ email }).first());
+            if (!user || !(await bcrypt.compare(password, user.password))) {
+                return res.status(401).json({ error: 'Identifiants invalides.' });
+            }
+            const token = jwt.sign({ id: user.id, email: user.email }, JWT_SECRET, { expiresIn: '1h' });
+            res.json({ token });
+        } catch {
+            res.status(500).json({ error: 'Erreur lors de la connexion.' });
+        }
+    });
+
+    app.use(['/api/jobs', '/api/cvs', '/api/profile', '/api/search', '/api/search-runs'], auth);
+
 
     app.get('/api/jobs', async (req, res) => {
         try {

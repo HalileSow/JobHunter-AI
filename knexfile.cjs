@@ -4,7 +4,7 @@ module.exports = {
   development: {
     client: 'sqlite3',
     connection: {
-      filename: './database/jobhunter.db'
+      filename: process.env.JOBHUNTER_DB_PATH || './database/jobhunter.db'
     },
     useNullAsDefault: true,
     migrations: {

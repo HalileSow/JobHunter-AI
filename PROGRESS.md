@@ -2,12 +2,13 @@
 
 ## Completed
 - [x] Initial codebase analysis initiated.
+- [x] Establishing roadmap and tracking.
+- [x] Database migration to Knex.
 
 ## In Progress
-- [ ] Establishing roadmap and tracking.
-- [ ] Codebase structure and functionality audit.
+- [ ] Authentication implementation.
+- [ ] Deployment infrastructure.
 
 ## Pending
-- [ ] Database migration.
 - [ ] Authentication implementation.
 - [ ] Deployment infrastructure.

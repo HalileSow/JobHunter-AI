@@ -4,11 +4,11 @@ module.exports = {
   development: {
     client: 'sqlite3',
     connection: {
-      filename: process.env.JOBHUNTER_DB_PATH || './database/jobhunter.db'
+      filename: process.env.JOBHUNTER_DB_PATH || require('path').resolve(__dirname, 'database/jobhunter.db')
     },
     useNullAsDefault: true,
     migrations: {
-      directory: './database/migrations'
+      directory: require('path').resolve(__dirname, 'database/migrations')
     }
   },
   production: {

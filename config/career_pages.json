@@ -1,0 +1,14 @@
+[
+  {
+    "company": "Decathlon",
+    "url": "https://recrutement.decathlon.fr/search?q={query}"
+  },
+  {
+    "company": "Orange",
+    "url": "https://orange.jobs/jobs/search?keyword={query}"
+  },
+  {
+    "company": "Société Générale",
+    "url": "https://careers.societegenerale.com/fr/recherche-offres?keywords={query}"
+  }
+]

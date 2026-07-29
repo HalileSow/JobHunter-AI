@@ -11,7 +11,7 @@ dotenv.config({ path: path.resolve(__dirname, '../.env') });
 /**
  * Helper pour appeler Gemini
  */
-async function callGemini(prompt) {
+export async function callGemini(prompt) {
     const apiKey = process.env.GEMINI_API_KEY;
     if (!apiKey) throw new Error("GEMINI_API_KEY manquante");
     

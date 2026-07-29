@@ -20,6 +20,7 @@ FROM node:24-bookworm-slim
 
 WORKDIR /app
 
+# Copy built app and dependencies
 COPY --from=builder /app/package*.json ./
 COPY --from=builder /app/automation/ ./automation/
 COPY --from=builder /app/site/ ./site/
@@ -28,6 +29,9 @@ COPY --from=builder /app/database/ ./database/
 COPY --from=builder /app/config/ ./config/
 COPY --from=builder /app/cv/ ./cv/
 COPY --from=builder /app/cover_letters/ ./cover_letters/
+
+# Install Playwright Chromium browser and its system dependencies
+RUN cd automation && npx playwright install --with-deps chromium
 
 ENV NODE_ENV=production
 ENV PORT=4173

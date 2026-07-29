@@ -1,25 +1,22 @@
 # ROADMAP
 
-## Phase 1: Foundation & Stability
-- [ ] Create/Update project structure and documentation.
-- [ ] Centralize configuration management.
-- [ ] Ensure all existing automation scripts are runnable and tested.
+## Phase 1: Foundation & Stability (Completed)
+- [x] Structure, docs, configuration management.
+- [x] Database abstraction layer (Knex).
+- [x] JWT Authentication.
 
-## Phase 2: Backend Transition & Data
-- [ ] Replace `jobs_db.json` with a database abstraction layer (support SQLite/PostgreSQL).
-- [ ] Migrate existing data to SQL format.
-- [ ] Implement database persistence and migrations.
+## Phase 2: Submission Automation (Completed)
+- [x] Architect submission workflow interface (automated vs. manual validation).
+- [x] Implement submission logic for major platforms (Indeed, LinkedIn, Career pages, ATS and Generic custom country sites).
+- [x] Integrate submission status and logs into the jobs database.
 
-## Phase 3: Web Dashboard Evolution
-- [ ] Standardize backend (Express) and frontend (React/Vite).
-- [ ] Implement secure authentication.
-- [ ] Develop dashboard UI according to requirements.
+## Phase 3: Dashboard & Monitoring (Completed)
+- [x] Enhance dashboard UI for real-time tracking (jobs lifecycle, status actions, SSE live stream).
+- [x] Document secure HTTPS/SSL configuration (Caddy & Nginx + Certbot).
+- [x] Setup system status monitoring and health endpoints (`/api/health`, `/api/system/status`).
 
-## Phase 4: Permanent Service & Deployment
-- [ ] Containerize application (Docker).
-- [ ] Set up deployment pipeline (CI/CD).
-- [ ] Configure automatic backups and service monitoring.
-
-## Phase 5: Advanced Features
-- [ ] AI Integration optimization.
-- [ ] Automated application submission (where permitted).
+## Phase 4: Production Readiness & Automation
+- [x] Finalize Docker/Compose for cloud (ready for deployment).
+- [x] Configure PM2 process management (`ecosystem.config.cjs`).
+- [ ] Configure automatic database backups & retention.
+- [ ] Implement automated CI/CD for deployments.

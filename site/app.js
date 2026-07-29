@@ -16,6 +16,74 @@ function escapeHtml(value = '') {
     }[character]));
 }
 
+function showToast(message, type = 'info') {
+    const container = document.getElementById('toast-container');
+    if (!container) return;
+    const toast = document.createElement('div');
+    toast.className = `toast toast-${type}`;
+    const icon = type === 'success' ? 'fa-check-circle' : type === 'error' ? 'fa-exclamation-circle' : type === 'warning' ? 'fa-exclamation-triangle' : 'fa-info-circle';
+    toast.innerHTML = `<i class="fas ${icon}"></i> <span>${escapeHtml(message)}</span>`;
+    container.appendChild(toast);
+    setTimeout(() => {
+        toast.style.opacity = '0';
+        toast.style.transition = 'opacity 0.3s ease';
+        setTimeout(() => toast.remove(), 300);
+    }, 4000);
+}
+
+function initSSE() {
+    if (!window.EventSource) return;
+    const evtSource = new EventSource('/api/events');
+    const statusEl = document.getElementById('system-status');
+
+    evtSource.addEventListener('connected', () => {
+        if (statusEl) {
+            statusEl.innerHTML = `<span class="pulse-dot"></span> En direct`;
+            statusEl.style.color = '#10b981';
+        }
+    });
+
+    evtSource.addEventListener('search_run_updated', (e) => {
+        try {
+            const data = JSON.parse(e.data || '{}');
+            if (typeof loadSearchRuns === 'function') loadSearchRuns();
+            if (data.status === 'completed') {
+                showToast('Recherche multi-providers terminée !', 'success');
+                if (typeof loadJobs === 'function') loadJobs();
+            } else if (data.status === 'failed') {
+                showToast('Erreur dans un workflow de recherche.', 'error');
+            } else if (data.status === 'queued') {
+                showToast(`Recherche lancée: ${data.title || ''}`, 'info');
+            }
+        } catch {
+            // Error parsing event
+        }
+    });
+
+    evtSource.addEventListener('job_updated', () => {
+        if (typeof loadJobs === 'function') loadJobs();
+    });
+
+    evtSource.addEventListener('job_deleted', () => {
+        if (typeof loadJobs === 'function') loadJobs();
+    });
+
+    evtSource.addEventListener('jobs_refreshed', () => {
+        if (typeof loadJobs === 'function') loadJobs();
+    });
+
+    evtSource.onerror = () => {
+        if (statusEl) {
+            statusEl.innerHTML = `<i class="fas fa-plug" style="font-size: 0.8rem;"></i> Reconnexion...`;
+            statusEl.style.color = '#f59e0b';
+        }
+    };
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+    initSSE();
+});
+
 // Tab Management
 document.querySelectorAll('.nav-item').forEach(btn => {
     btn.addEventListener('click', () => {
@@ -27,10 +95,19 @@ document.querySelectorAll('.nav-item').forEach(btn => {
         
         if (btn.dataset.tab === 'dashboard') loadJobs();
         if (btn.dataset.tab === 'search') loadSearchRuns();
+        if (btn.dataset.tab === 'providers') loadProviders();
+        if (btn.dataset.tab === 'scheduler') loadSchedules();
         if (btn.dataset.tab === 'cvs') loadCvs();
         if (btn.dataset.tab === 'settings') loadProfile();
     });
 });
+
+function getStatusClass(status) {
+    if (status === 'Soumis') return 'submitted';
+    if (status === 'En attente de confirmation') return 'pending';
+    if (status === 'Échec') return 'failed';
+    return 'registered';
+}
 
 // Dashboard: Load Jobs
 async function loadJobs() {
@@ -40,31 +117,153 @@ async function loadJobs() {
     const avgEl = document.getElementById('avg-score');
     
     totalEl.textContent = jobs.length;
-    const avg = jobs.length ? Math.round(jobs.reduce((a, b) => a + b.score, 0) / jobs.length) : 0;
+    const avg = jobs.length ? Math.round(jobs.reduce((a, b) => a + (b.score || 0), 0) / jobs.length) : 0;
     avgEl.textContent = `${avg}%`;
     
-    list.innerHTML = jobs.length ? jobs.map(job => `
-        <div class="job-card">
-            <span class="score-badge">${job.score}%</span>
-            <h3>${escapeHtml(job.title)}</h3>
-            <span class="company">${escapeHtml(job.company)}</span>
-            <div class="analysis">${escapeHtml((job.analysis || 'Analyse indisponible.').substring(0, 150))}...</div>
-            <div class="actions">
-                <a href="/api/jobs/${job.id}/pdf" target="_blank" class="btn-outline">
-                    <i class="fas fa-file-pdf"></i> PDF
-                </a>
-                <button onclick="deleteJob(${job.id})" class="btn-danger">
-                    <i class="fas fa-trash"></i>
+    list.innerHTML = jobs.length ? jobs.map(job => {
+        const badgeClass = getStatusClass(job.status);
+        let actionBtn = '';
+        if (job.status === 'En attente de confirmation') {
+            actionBtn = `
+                <button onclick="confirmJob(${job.id})" class="btn-confirm" title="Confirmer en 1-clic l'envoi">
+                    <i class="fas fa-check-circle"></i> Valider & Envoyer (1-clic)
                 </button>
+                <button onclick="viewPack(${job.id})" class="btn-outline" title="Voir le pack prêt">
+                    <i class="fas fa-box-open"></i> Dossier Prêt
+                </button>
+            `;
+        } else if (job.status === 'Enregistré' || job.status === 'Échec') {
+            actionBtn = `
+                <button onclick="applyJob(${job.id}, this)" class="btn-apply" title="Lancer le cycle de candidature">
+                    <i class="fas fa-paper-plane"></i> Postuler
+                </button>
+            `;
+        }
+        
+        return `
+            <div class="job-card" style="border-left: 4px solid ${badgeClass === 'submitted' ? '#10b981' : badgeClass === 'pending' ? '#f59e0b' : '#6366f1'};">
+                <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 10px;">
+                    <div>
+                        <span class="score-badge" style="background: rgba(99, 102, 241, 0.15); color: #818cf8; font-weight: 700; padding: 4px 8px; border-radius: 6px;">Match IA: ${job.score}%</span>
+                        <span class="provider-badge" style="font-size: 0.75rem; background: rgba(255,255,255,0.08); padding: 3px 6px; border-radius: 4px; margin-left: 5px;"><i class="fas fa-layer-group"></i> ${escapeHtml(job.provider || 'generic')}</span>
+                    </div>
+                    <span class="status-badge status-${badgeClass}" style="padding: 4px 10px; border-radius: 12px; font-size: 0.8rem; font-weight: 600;">${escapeHtml(job.status)}</span>
+                </div>
+                
+                <h3 style="margin-top: 10px; font-size: 1.1rem;">${escapeHtml(job.title)}</h3>
+                <span class="company" style="color: #60a5fa; font-weight: 500;">${escapeHtml(job.company)}</span>
+                
+                <div class="job-details" style="font-size: 0.85rem; color: #9ca3af; margin: 8px 0; display: flex; gap: 15px; flex-wrap: wrap;">
+                    <span><i class="fas fa-map-marker-alt"></i> ${escapeHtml(job.country || 'N/A')}</span>
+                    ${job.contract_type ? `<span><i class="fas fa-file-contract"></i> ${escapeHtml(job.contract_type)}</span>` : ''}
+                    ${job.salary && job.salary !== 'N/A' ? `<span><i class="fas fa-coins"></i> ${escapeHtml(job.salary)}</span>` : ''}
+                </div>
+                
+                <div class="analysis" style="font-size: 0.85rem; color: #d1d5db; background: rgba(0,0,0,0.2); padding: 8px; border-radius: 6px; margin-bottom: 12px;">
+                    ${escapeHtml((job.analysis || 'Analyse IA indisponible.').substring(0, 160))}...
+                </div>
+                
+                ${job.error ? `<div class="job-error-msg" style="color: #fca5a5; font-size: 0.8rem; margin: 0.5rem 0; padding: 6px; background: rgba(239, 68, 68, 0.15); border-radius: 4px;"><i class="fas fa-exclamation-triangle"></i> ${escapeHtml(job.error)}</div>` : ''}
+                
+                <div class="actions" style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-top: auto;">
+                    <a href="/api/jobs/${job.id}/pdf" target="_blank" class="btn-outline" title="Télécharger la lettre PDF">
+                        <i class="fas fa-file-pdf"></i> Lettre PDF
+                    </a>
+                    <a href="${escapeHtml(job.link)}" target="_blank" class="btn-outline" title="Ouvrir le lien de l'offre">
+                        <i class="fas fa-external-link-alt"></i> Offre
+                    </a>
+                    ${actionBtn}
+                    <button onclick="deleteJob(${job.id})" class="btn-danger" title="Supprimer" style="margin-left: auto;">
+                        <i class="fas fa-trash"></i>
+                    </button>
+                </div>
             </div>
-        </div>
-    `).join('') : '<p class="empty-state">Aucune offre analysée pour le moment.</p>';
+        `;
+    }).join('') : '<p class="empty-state">Aucune offre analysée pour le moment.</p>';
 }
 
 async function deleteJob(id) {
-    if (confirm('Supprimer cette offre ?')) {
+    if (confirm('Supprimer cette offre de la liste ?')) {
         await api(`/jobs/${id}`, 'DELETE');
         loadJobs();
+    }
+}
+
+async function confirmJob(id) {
+    try {
+        const res = await api(`/jobs/${id}/confirm`, 'POST');
+        alert(res.message || "Candidature marquée comme soumise !");
+        loadJobs();
+    } catch (e) {
+        alert(e.message);
+    }
+}
+
+async function viewPack(id) {
+    try {
+        const data = await api(`/jobs/${id}/pack`);
+        const packStr = JSON.stringify(data.pack || {}, null, 2);
+        alert(`Dossier préparé pour ${data.company} (${data.title}) :\n\nLien direct: ${data.link}\n\nDonnées pré-remplies:\n${packStr}`);
+    } catch (e) {
+        alert(e.message);
+    }
+}
+
+async function applyJob(id, btn) {
+    btn.disabled = true;
+    const oldHtml = btn.innerHTML;
+    btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Traitement...';
+    try {
+        const res = await api(`/jobs/${id}/apply`, 'POST');
+        if (res.status === 'Soumis') {
+            alert("Candidature soumise automatiquement avec succès !");
+        } else if (res.status === 'En attente de confirmation') {
+            alert("Le dossier de candidature est entièrement préparé (Lettre PDF, CV ciblé & champs prêts). Cliquez sur 'Valider & Envoyer' après vérification.");
+        } else {
+            alert(`Résultat : ${res.status}`);
+        }
+        loadJobs();
+    } catch (e) {
+        alert(e.message);
+        loadJobs();
+    } finally {
+        if (btn) {
+            btn.disabled = false;
+            btn.innerHTML = oldHtml;
+        }
+    }
+}
+
+// Providers Management
+async function loadProviders() {
+    try {
+        const providers = await api('/providers');
+        const grid = document.getElementById('providers-list-grid');
+        grid.innerHTML = providers.map(p => `
+            <div class="provider-card" style="background: var(--bg-card, #1e293b); padding: 16px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.1);">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+                    <strong style="font-size: 1rem; color: #f8fafc;">${escapeHtml(p.name)}</strong>
+                    <span style="font-size: 0.75rem; padding: 2px 8px; border-radius: 10px; background: rgba(99,102,241,0.2); color: #a5b4fc;">${escapeHtml(p.type)}</span>
+                </div>
+                <div style="font-size: 0.8rem; color: #94a3b8; margin-bottom: 12px;">
+                    ID: <code>${escapeHtml(p.id)}</code> | Pays: ${escapeHtml((p.countries || []).join(', '))}
+                </div>
+                <button onclick="toggleProvider('${p.id}', ${!p.enabled})" style="width: 100%; padding: 8px; border-radius: 6px; border: none; cursor: pointer; font-weight: 600; background: ${p.enabled ? '#10b981' : '#475569'}; color: white;">
+                    ${p.enabled ? '<i class="fas fa-check-circle"></i> Actif (Cliquez pour désactiver)' : '<i class="fas fa-power-off"></i> Inactif (Cliquez pour activer)'}
+                </button>
+            </div>
+        `).join('');
+    } catch (e) {
+        document.getElementById('providers-list-grid').innerHTML = `<p class="empty-state">${escapeHtml(e.message)}</p>`;
+    }
+}
+
+async function toggleProvider(id, enabled) {
+    try {
+        await api(`/providers/${id}/toggle`, 'POST', { enabled });
+        loadProviders();
+    } catch (e) {
+        alert(e.message);
     }
 }
 
@@ -81,17 +280,17 @@ document.getElementById('btn-launch-search').addEventListener('click', async () 
     if (!data.title) return alert('Veuillez saisir un titre de métier.');
 
     btn.disabled = true;
-    btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Automatisation en cours...';
+    btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Recherche & IA en cours...';
     
     try {
         await api('/search', 'POST', data);
-        alert("Recherche lancée. Les résultats apparaîtront dans le tableau de bord dès la fin du traitement.");
+        alert("Recherche multi-providers lancée en arrière-plan (24/7). Les résultats apparaîtront dans le tableau de bord !");
         loadSearchRuns();
     } catch (e) {
         alert(e.message);
     } finally {
         btn.disabled = false;
-        btn.innerHTML = '<i class="fas fa-play"></i> Lancer l’Automatisation';
+        btn.innerHTML = '<i class="fas fa-rocket"></i> Lancer la recherche multi-providers';
     }
 });
 
@@ -100,12 +299,12 @@ async function loadCvs() {
     const cvs = await api('/cvs');
     const list = document.getElementById('cv-list');
     list.innerHTML = cvs.length ? cvs.map(cv => `
-        <div class="cv-card">
+        <div class="cv-card" style="display: flex; justify-content: space-between; align-items: center; background: #1e293b; padding: 15px; border-radius: 8px; margin-bottom: 10px;">
             <div>
-                <h3>${escapeHtml(cv.name)}</h3>
-                <p>${cv.is_active ? 'CV actif' : 'CV disponible'}</p>
+                <h3 style="margin: 0; font-size: 1rem;">${escapeHtml(cv.name)}</h3>
+                <p style="margin: 4px 0 0 0; font-size: 0.8rem; color: #94a3b8;">${cv.is_active ? '✅ CV Actif par défaut' : 'CV disponible'}</p>
             </div>
-            <button onclick="activateCv(${cv.id})" class="btn-active" ${cv.is_active ? 'disabled' : ''}>${cv.is_active ? 'Actif' : 'Activer'}</button>
+            <button onclick="activateCv(${cv.id})" class="btn-active" ${cv.is_active ? 'disabled' : ''} style="padding: 6px 14px; border-radius: 6px;">${cv.is_active ? 'Actif' : 'Activer'}</button>
         </div>
     `).join('') : '<p class="empty-state">Aucun CV enregistré.</p>';
 }
@@ -122,13 +321,12 @@ async function loadSearchRuns() {
         const runs = await api('/search-runs');
         const list = document.getElementById('search-runs-list');
         list.innerHTML = runs.length ? runs.map((run) => `
-            <article class="run-card">
+            <article class="run-card" style="display: flex; justify-content: space-between; align-items: center; background: #1e293b; padding: 12px; border-radius: 6px; margin-bottom: 8px;">
                 <div>
-                    <strong>${escapeHtml(run.title)}</strong>
-                    <span>${escapeHtml(run.country)}${run.keywords ? ` · ${escapeHtml(run.keywords)}` : ''}</span>
+                    <strong style="color: #f8fafc;">${escapeHtml(run.title)}</strong>
+                    <span style="color: #94a3b8; font-size: 0.85rem; margin-left: 10px;">${escapeHtml(run.country)}${run.keywords ? ` · ${escapeHtml(run.keywords)}` : ''}</span>
                 </div>
-                <span class="run-status status-${escapeHtml(run.status)}">${runStatusLabels[run.status] || 'Inconnue'}</span>
-                ${run.error ? `<p class="run-error">${escapeHtml(run.error)}</p>` : ''}
+                <span class="run-status status-${escapeHtml(run.status)}" style="font-size: 0.8rem; font-weight: 600;">${runStatusLabels[run.status] || 'Inconnue'}</span>
             </article>
         `).join('') : '<p class="empty-state">Aucune recherche lancée.</p>';
     } catch (error) {
@@ -146,7 +344,8 @@ async function activateCv(id) {
 }
 
 function setProfileValue(id, value = '') {
-    document.getElementById(id).value = value || '';
+    const el = document.getElementById(id);
+    if (el) el.value = value || '';
 }
 
 async function loadProfile() {
@@ -185,7 +384,7 @@ document.getElementById('profile-form').addEventListener('submit', async (event)
     };
     try {
         await api('/profile', 'PUT', profile);
-        feedback.textContent = 'Profil enregistré.';
+        feedback.textContent = 'Profil enregistré avec succès.';
     } catch (error) {
         feedback.textContent = error.message;
     }
@@ -193,3 +392,98 @@ document.getElementById('profile-form').addEventListener('submit', async (event)
 
 // Init
 loadJobs();
+
+// === SCHEDULER (Recherches planifiées) ===
+
+const CRON_LABELS = {
+    '0 */6 * * *': 'Toutes les 6 heures',
+    '0 */3 * * *': 'Toutes les 3 heures',
+    '0 */12 * * *': 'Toutes les 12 heures',
+    '0 8 * * *': 'Chaque jour \u00e0 8h',
+    '0 8 * * 1-5': 'Lundi\u2013Vendredi \u00e0 8h'
+};
+
+async function loadSchedules() {
+    try {
+        const schedules = await api('/schedules');
+        const list = document.getElementById('schedules-list');
+        if (!list) return;
+
+        list.innerHTML = schedules.length ? schedules.map(s => {
+            const cronLabel = CRON_LABELS[s.cron_expression] || s.cron_expression;
+            const statusColor = s.enabled ? '#10b981' : '#6b7280';
+            const statusLabel = s.enabled ? 'Actif' : 'Suspendu';
+            const lastRun = s.last_run_at ? new Date(s.last_run_at).toLocaleString('fr-FR') : 'Jamais';
+
+            return `
+                <div class="run-item" style="display:flex; justify-content:space-between; align-items:center; padding:14px; background: var(--bg-card); border-radius:10px; border-left: 4px solid ${statusColor}; margin-bottom: 10px;">
+                    <div>
+                        <strong style="font-size: 1.05rem;">${escapeHtml(s.name)}</strong>
+                        <div style="color: #9ca3af; font-size: 0.85rem; margin-top: 4px;">
+                            <i class="fas fa-briefcase"></i> ${escapeHtml(s.title)} | <i class="fas fa-map-marker-alt"></i> ${escapeHtml(s.country)}
+                            ${s.keywords ? `| <i class="fas fa-tags"></i> ${escapeHtml(s.keywords)}` : ''}
+                        </div>
+                        <div style="color: #9ca3af; font-size: 0.8rem; margin-top: 4px;">
+                            <i class="fas fa-clock"></i> ${escapeHtml(cronLabel)} | <i class="fas fa-history"></i> ${s.total_runs} ex\u00e9cution(s) | Derni\u00e8re : ${lastRun}
+                        </div>
+                    </div>
+                    <div style="display:flex; gap:8px; align-items:center;">
+                        <span style="color:${statusColor}; font-weight:600; font-size: 0.85rem;"><span class="${s.enabled ? 'pulse-dot' : ''}" style="margin-right:5px;"></span>${statusLabel}</span>
+                        <button onclick="toggleSchedule(${s.id}, ${s.enabled ? 'false' : 'true'})" class="btn-outline" title="${s.enabled ? 'Suspendre' : 'Activer'}">
+                            <i class="fas fa-${s.enabled ? 'pause' : 'play'}"></i>
+                        </button>
+                        <button onclick="deleteSchedule(${s.id})" class="btn-danger" title="Supprimer">
+                            <i class="fas fa-trash"></i>
+                        </button>
+                    </div>
+                </div>
+            `;
+        }).join('') : '<p class="empty-state">Aucune recherche planifi\u00e9e. Cr\u00e9ez-en une ci-dessus.</p>';
+    } catch (e) {
+        console.error('Erreur chargement schedules:', e);
+    }
+}
+
+async function toggleSchedule(id, enabled) {
+    try {
+        await api(`/schedules/${id}/toggle`, 'PUT', { enabled });
+        showToast(enabled ? 'Recherche planifi\u00e9e activ\u00e9e.' : 'Recherche planifi\u00e9e suspendue.', enabled ? 'success' : 'warning');
+        loadSchedules();
+    } catch (e) {
+        alert(e.message);
+    }
+}
+
+async function deleteSchedule(id) {
+    if (!confirm('Supprimer cette recherche planifi\u00e9e ?')) return;
+    try {
+        await api(`/schedules/${id}`, 'DELETE');
+        showToast('Recherche planifi\u00e9e supprim\u00e9e.', 'info');
+        loadSchedules();
+    } catch (e) {
+        alert(e.message);
+    }
+}
+
+document.getElementById('btn-create-schedule')?.addEventListener('click', async () => {
+    const name = document.getElementById('sched-name')?.value?.trim();
+    const country = document.getElementById('sched-country')?.value?.trim();
+    const title = document.getElementById('sched-title')?.value?.trim();
+    const keywords = document.getElementById('sched-keywords')?.value?.trim() || '';
+    const cron_expression = document.getElementById('sched-cron')?.value;
+
+    if (!name || !country || !title) {
+        alert('Veuillez remplir le nom, le pays et le m\u00e9tier.');
+        return;
+    }
+    try {
+        await api('/schedules', 'POST', { name, country, title, keywords, cron_expression });
+        showToast(`Recherche planifi\u00e9e "${name}" cr\u00e9\u00e9e !`, 'success');
+        document.getElementById('sched-name').value = '';
+        document.getElementById('sched-title').value = '';
+        document.getElementById('sched-keywords').value = '';
+        loadSchedules();
+    } catch (e) {
+        alert(e.message);
+    }
+});

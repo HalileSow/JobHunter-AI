@@ -6,9 +6,12 @@ import { spawn } from 'node:child_process';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { initDb } from '../automation/db.js';
+import { submitJob, confirmUserSubmission } from '../automation/submission_engine.js';
+import { defaultRegistry } from '../automation/providers/registry.js';
+import { backupDatabase } from '../automation/backup_db.js';
+import { startScheduler } from '../automation/scheduler.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-// TODO: Set JWT_SECRET in production to a strong, random string.
 const JWT_SECRET = process.env.JWT_SECRET || 'dev-secret-key';
 const automationDirectory = path.join(__dirname, '..', 'automation');
 const automationScript = path.join(automationDirectory, 'main.js');
@@ -50,12 +53,67 @@ function createApp() {
     app.use(express.json({ limit: '100kb' }));
     app.use(express.static(__dirname));
 
+    let sseClients = [];
+
+    function broadcast(event, data = {}) {
+        const payload = `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`;
+        sseClients.forEach((client) => {
+            try {
+                client.res.write(payload);
+            } catch {
+                // Client connection might be closed
+            }
+        });
+    }
+
+    app.get('/api/events', (req, res) => {
+        res.setHeader('Content-Type', 'text/event-stream');
+        res.setHeader('Cache-Control', 'no-cache');
+        res.setHeader('Connection', 'keep-alive');
+        res.flushHeaders();
+
+        const clientId = Date.now() + Math.random();
+        const newClient = { id: clientId, res };
+        sseClients.push(newClient);
+
+        res.write(`event: connected\ndata: ${JSON.stringify({ status: 'connected', clientId })}\n\n`);
+
+        req.on('close', () => {
+            sseClients = sseClients.filter((c) => c.id !== clientId);
+        });
+    });
+
     app.get('/api/health', async (req, res) => {
         try {
             await withDb(async () => undefined);
-            res.json({ status: 'ok' });
+            res.json({ status: 'ok', uptime: process.uptime() });
         } catch {
             res.status(503).json({ error: 'Base de données indisponible.' });
+        }
+    });
+
+    app.get('/api/system/status', async (req, res) => {
+        try {
+            const stats = await withDb(async (db) => {
+                const [jobsCount] = await db('jobs').count('id as count');
+                const [runsCount] = await db('search_runs').count('id as count');
+                return {
+                    totalJobs: Number(jobsCount?.count || 0),
+                    totalSearchRuns: Number(runsCount?.count || 0)
+                };
+            });
+            const providers = defaultRegistry.getMetadataList();
+            const activeProviders = providers.filter(p => p.enabled).length;
+            res.json({
+                status: 'healthy',
+                uptimeSeconds: Math.floor(process.uptime()),
+                activeProviders,
+                totalProviders: providers.length,
+                ...stats,
+                connectedClients: sseClients.length
+            });
+        } catch (error) {
+            res.status(500).json({ status: 'unhealthy', error: error.message });
         }
     });
 
@@ -85,19 +143,98 @@ function createApp() {
             if (!user || !(await bcrypt.compare(password, user.password))) {
                 return res.status(401).json({ error: 'Identifiants invalides.' });
             }
-            const token = jwt.sign({ id: user.id, email: user.email }, JWT_SECRET, { expiresIn: '1h' });
+            const token = jwt.sign({ id: user.id, email: user.email }, JWT_SECRET, { expiresIn: '7d' });
             res.json({ token });
         } catch {
             res.status(500).json({ error: 'Erreur lors de la connexion.' });
         }
     });
 
-    app.use(['/api/jobs', '/api/cvs', '/api/profile', '/api/search', '/api/search-runs'], auth);
+    app.use(['/api/jobs', '/api/cvs', '/api/profile', '/api/search', '/api/search-runs', '/api/providers', '/api/admin', '/api/schedules'], auth);
 
+    // Endpoints Recherches Planifiées
+    app.get('/api/schedules', async (req, res) => {
+        try {
+            const schedules = await withDb((db) => db('scheduled_searches').select('*').orderBy('created_at', 'desc'));
+            res.json(schedules);
+        } catch {
+            res.status(500).json({ error: 'Impossible de charger les recherches planifiées.' });
+        }
+    });
 
+    app.post('/api/schedules', async (req, res) => {
+        try {
+            const name = requiredText(req.body?.name, 'Nom');
+            const country = requiredText(req.body?.country, 'Pays');
+            const title = requiredText(req.body?.title, 'Métier');
+            const keywords = optionalText(req.body?.keywords);
+            const lang = allowedLanguages.has(req.body?.lang) ? req.body.lang : 'fr';
+            const cron_expression = requiredText(req.body?.cron_expression, 'Expression cron');
+
+            const [id] = await withDb((db) => db('scheduled_searches').insert({
+                name, country, title, keywords, lang, cron_expression, enabled: true
+            }));
+            const schedule = await withDb((db) => db('scheduled_searches').where({ id }).first());
+            res.status(201).json(schedule);
+        } catch (error) {
+            res.status(400).json({ error: error.message || 'Paramètres invalides.' });
+        }
+    });
+
+    app.put('/api/schedules/:id/toggle', async (req, res) => {
+        try {
+            const { enabled } = req.body;
+            const changed = await withDb((db) => db('scheduled_searches').where({ id: req.params.id }).update({ enabled: enabled ? 1 : 0 }));
+            if (!changed) return res.status(404).json({ error: 'Recherche planifiée introuvable.' });
+            res.json({ success: true });
+        } catch {
+            res.status(500).json({ error: 'Impossible de modifier cette recherche planifiée.' });
+        }
+    });
+
+    app.delete('/api/schedules/:id', async (req, res) => {
+        try {
+            const changed = await withDb((db) => db('scheduled_searches').where({ id: req.params.id }).del());
+            if (!changed) return res.status(404).json({ error: 'Recherche planifiée introuvable.' });
+            res.json({ success: true });
+        } catch {
+            res.status(500).json({ error: 'Impossible de supprimer cette recherche planifiée.' });
+        }
+    });
+
+    app.post('/api/admin/backup', async (req, res) => {
+        try {
+            const result = await backupDatabase();
+            res.json(result);
+        } catch (error) {
+            res.status(500).json({ error: error.message || 'Impossible d’exécuter la sauvegarde.' });
+        }
+    });
+
+    // Endpoints Providers
+    app.get('/api/providers', async (req, res) => {
+        try {
+            res.json(defaultRegistry.getMetadataList());
+        } catch (err) {
+            res.status(500).json({ error: 'Impossible de charger la liste des providers.' });
+        }
+    });
+
+    app.post('/api/providers/:id/toggle', async (req, res) => {
+        try {
+            const { enabled } = req.body;
+            const success = defaultRegistry.setEnabled(req.params.id, Boolean(enabled));
+            if (!success) return res.status(404).json({ error: 'Provider introuvable.' });
+            res.json({ success: true, providers: defaultRegistry.getMetadataList() });
+        } catch {
+            res.status(500).json({ error: 'Impossible d’activer/désactiver le provider.' });
+        }
+    });
+
+    // Endpoints Jobs
     app.get('/api/jobs', async (req, res) => {
         try {
-            const jobs = await withDb((db) => db('jobs').select('*').orderBy('created_at', 'desc').orderBy('id', 'desc'));
+            const jobs = await withDb((db) => db('jobs').select('*').orderBy('score', 'desc').orderBy('created_at', 'desc'));
             res.json(jobs);
         } catch {
             res.status(500).json({ error: 'Impossible de charger les offres.' });
@@ -108,6 +245,7 @@ function createApp() {
         try {
             const changes = await withDb((db) => db('jobs').where({ id: req.params.id }).del());
             if (!changes) return res.status(404).json({ error: 'Offre introuvable.' });
+            broadcast('job_deleted', { id: req.params.id });
             res.json({ success: true });
         } catch {
             res.status(500).json({ error: 'Impossible de supprimer cette offre.' });
@@ -127,6 +265,54 @@ function createApp() {
             });
         } catch {
             res.status(500).json({ error: 'Impossible de récupérer le PDF.' });
+        }
+    });
+
+    app.post('/api/jobs/:id/confirm', async (req, res) => {
+        try {
+            const result = await confirmUserSubmission(req.params.id);
+            broadcast('job_updated', { id: req.params.id, status: 'Soumis' });
+            res.json(result);
+        } catch (error) {
+            res.status(500).json({ error: error.message || 'Impossible de confirmer la soumission.' });
+        }
+    });
+
+    app.get('/api/jobs/:id/pack', async (req, res) => {
+        try {
+            const job = await withDb((db) => db('jobs').where({ id: req.params.id }).first());
+            if (!job) return res.status(404).json({ error: 'Offre introuvable.' });
+            
+            let pack = {};
+            if (job.prefilled_data) {
+                try {
+                    pack = JSON.parse(job.prefilled_data);
+                } catch (e) {
+                    pack = { note: job.prefilled_data };
+                }
+            }
+            res.json({
+                jobId: job.id,
+                title: job.title,
+                company: job.company,
+                link: job.link,
+                letter: job.letter,
+                pdfPath: job.pdf_path,
+                pack
+            });
+        } catch {
+            res.status(500).json({ error: 'Impossible de récupérer le dossier de candidature.' });
+        }
+    });
+
+    app.post('/api/jobs/:id/apply', async (req, res) => {
+        try {
+            await submitJob(req.params.id);
+            const job = await withDb((db) => db('jobs').where({ id: req.params.id }).first());
+            broadcast('job_updated', { id: req.params.id, status: job?.status, error: job?.error });
+            res.json({ success: true, status: job.status, error: job.error });
+        } catch (error) {
+            res.status(500).json({ error: `Erreur lors de la tentative de soumission : ${error.message}` });
         }
     });
 
@@ -214,6 +400,7 @@ function createApp() {
                 const [id] = await db('search_runs').insert({ country, title, keywords, lang, status: 'queued' });
                 return { id };
             });
+            broadcast('search_run_updated', { id: run.id, status: 'queued', title, country });
 
             const child = spawn(process.execPath, [automationScript, country, title, keywords, lang], {
                 cwd: automationDirectory,
@@ -223,16 +410,20 @@ function createApp() {
             child.unref();
             child.once('spawn', () => {
                 withDb((db) => db('search_runs').where({ id: run.id }).update({ status: 'running', started_at: db.fn.now() })).catch(console.error);
+                broadcast('search_run_updated', { id: run.id, status: 'running' });
             });
             child.once('error', (error) => {
                 withDb((db) => db('search_runs').where({ id: run.id }).update({ status: 'failed', error: error.message, finished_at: db.fn.now() })).catch(console.error);
+                broadcast('search_run_updated', { id: run.id, status: 'failed', error: error.message });
             });
             child.once('close', (code) => {
                 const status = code === 0 ? 'completed' : 'failed';
                 const error = code === 0 ? null : `Le workflow s’est arrêté avec le code ${code}.`;
                 withDb((db) => db('search_runs').where({ id: run.id }).update({ status, error, finished_at: db.fn.now() })).catch(console.error);
+                broadcast('search_run_updated', { id: run.id, status, error });
+                broadcast('jobs_refreshed', {});
             });
-            res.status(202).json({ success: true, runId: run.id, message: 'Recherche lancée.' });
+            res.status(202).json({ success: true, runId: run.id, message: 'Recherche multi-providers lancée.' });
         } catch (error) {
             res.status(400).json({ error: error.message || 'Paramètres de recherche invalides.' });
         }
@@ -245,7 +436,10 @@ const app = createApp();
 
 if (path.resolve(process.argv[1] || '') === fileURLToPath(import.meta.url)) {
     initDb().then(() => {
-        app.listen(port, '0.0.0.0', () => console.log(`🚀 JobHunter-AI disponible sur http://localhost:${port}`));
+        app.listen(port, '0.0.0.0', () => {
+            console.log(`🚀 JobHunter-AI disponible sur http://localhost:${port}`);
+            startScheduler();
+        });
     }).catch((error) => {
         console.error(`Impossible d’initialiser JobHunter-AI : ${error.message}`);
         process.exitCode = 1;

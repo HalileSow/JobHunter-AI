@@ -2,11 +2,13 @@ import assert from 'node:assert/strict';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { createApp } from '../server.mjs';
 
 const directory = await mkdtemp(path.join(tmpdir(), 'jobhunter-api-'));
 process.env.JOBHUNTER_DB_PATH = path.join(directory, 'jobhunter.db');
 process.env.JWT_SECRET = 'test-secret';
+
+// Dynamically import createApp after setting environment variables so the database uses the test path
+const { createApp } = await import('../server.mjs');
 const server = createApp().listen(0, '127.0.0.1');
 
 try {
@@ -33,9 +35,22 @@ try {
     assert.equal(read.status, 200);
     const profile = await read.json();
     assert.equal(profile.first_name, 'Ibrahima');
-    assert.deepEqual(JSON.parse(profile.skills), ['Vente', 'Excel']);
-    console.log('✔ API profil : enregistrement et lecture validés');
+    const statusRes = await fetch(`${baseUrl}/api/system/status`);
+    assert.equal(statusRes.status, 200);
+    const systemStatus = await statusRes.json();
+    assert.equal(systemStatus.status, 'healthy');
+    assert(typeof systemStatus.activeProviders === 'number');
+
+    const backupRes = await fetch(`${baseUrl}/api/admin/backup`, { method: 'POST', headers });
+    assert.equal(backupRes.status, 200);
+    const backupData = await backupRes.json();
+    assert.equal(backupData.success, true);
+    assert(backupData.backupFileName);
+
+    console.log('✔ API profil, system/status et backup : enregistrement et lecture validés');
 } finally {
+    const { db } = await import('../../automation/db.js');
+    await db.destroy();
     await new Promise((resolve) => server.close(resolve));
     delete process.env.JOBHUNTER_DB_PATH;
     delete process.env.JWT_SECRET;

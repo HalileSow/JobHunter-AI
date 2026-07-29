@@ -3,6 +3,10 @@ import { after, before, test } from 'node:test';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
+import { fileURLToPath } from 'url';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 let directory;
 
@@ -20,22 +24,48 @@ test('initialise le schéma complet et enregistre une offre', async () => {
     const { initDb } = await import('../db.js');
     const db = await initDb();
 
-    const columns = await db.all('PRAGMA table_info(jobs)');
-    assert.deepEqual(
-        ['salary', 'contract_type', 'date_posted', 'selected_cv_id', 'pdf_path'].every((name) => columns.some((column) => column.name === name)),
-        true
-    );
+    // Exécuter les migrations sur la base temporaire
+    await db.migrate.latest({
+        directory: path.join(__dirname, '../../database/migrations')
+    });
 
-    await db.run(
-        'INSERT INTO jobs (title, company, score, salary, selected_cv_id, pdf_path) VALUES (?, ?, ?, ?, ?, ?)',
-        ['Développeur Node.js', 'Exemple', 82, '50000', 1, '/tmp/letter.pdf']
-    );
-    const job = await db.get('SELECT title, score, pdf_path FROM jobs');
+    // Vérifier les colonnes de la table jobs
+    const hasSalary = await db.schema.hasColumn('jobs', 'salary');
+    const hasContractType = await db.schema.hasColumn('jobs', 'contract_type');
+    const hasDatePosted = await db.schema.hasColumn('jobs', 'date_posted');
+    const hasSelectedCvId = await db.schema.hasColumn('jobs', 'selected_cv_id');
+    const hasPdfPath = await db.schema.hasColumn('jobs', 'pdf_path');
+
+    assert.equal(hasSalary && hasContractType && hasDatePosted && hasSelectedCvId && hasPdfPath, true);
+
+    // Insérer un CV
+    await db('cvs').insert({
+        name: 'CV français',
+        path: '/tmp/cv_fr.pdf',
+        is_active: 1
+    });
+
+    // Insérer un job
+    await db('jobs').insert({
+        title: 'Développeur Node.js',
+        company: 'Exemple',
+        score: 82,
+        salary: '50000',
+        selected_cv_id: 1,
+        pdf_path: '/tmp/letter.pdf'
+    });
+
+    // Récupérer le job et vérifier
+    const job = await db('jobs').select('title', 'score', 'pdf_path').first();
     assert.deepEqual(job, { title: 'Développeur Node.js', score: 82, pdf_path: '/tmp/letter.pdf' });
 
-    const searchRuns = await db.all("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'search_runs'");
-    assert.equal(searchRuns.length, 1);
-    const cv = await db.get('SELECT name, is_active FROM cvs');
+    // Vérifier la présence de la table search_runs
+    const hasSearchRunsTable = await db.schema.hasTable('search_runs');
+    assert.equal(hasSearchRunsTable, true);
+
+    // Vérifier le CV
+    const cv = await db('cvs').select('name', 'is_active').first();
     assert.deepEqual(cv, { name: 'CV français', is_active: 1 });
-    await db.close();
+
+    await db.destroy();
 });

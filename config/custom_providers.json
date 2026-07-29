@@ -1,0 +1,56 @@
+[
+  {
+    "name": "jobfinder_luxembourg",
+    "country": "Luxembourg",
+    "url_pattern": "https://www.jobfinder.lu/search?q={query}",
+    "selector": ".job-listing",
+    "title_selector": ".job-title",
+    "company_selector": ".company-name",
+    "link_selector": "a.job-link"
+  },
+  {
+    "name": "monster_france",
+    "country": "France",
+    "url_pattern": "https://www.monster.fr/emploi/recherche?q={query}",
+    "selector": "[class*='job-card']",
+    "title_selector": "[class*='title']",
+    "company_selector": "[class*='company']",
+    "link_selector": "a"
+  },
+  {
+    "name": "karriere_austria",
+    "country": "Autriche",
+    "url_pattern": "https://www.karriere.at/jobs?keywords={query}",
+    "selector": ".m-jobItem",
+    "title_selector": ".m-jobItem__title",
+    "company_selector": ".m-jobItem__company",
+    "link_selector": ".m-jobItem__titleLink"
+  },
+  {
+    "name": "jobat_belgium",
+    "country": "Belgique",
+    "url_pattern": "https://www.jobat.be/fr/recherche-d-emplois?q={query}",
+    "selector": "article.job-card",
+    "title_selector": "h2",
+    "company_selector": ".company",
+    "link_selector": "a"
+  },
+  {
+    "name": "jobboom_canada",
+    "country": "Canada",
+    "url_pattern": "https://www.jobboom.com/fr/offres-d-emploi?q={query}",
+    "selector": ".job-header",
+    "title_selector": "h2",
+    "company_selector": ".company-name",
+    "link_selector": "a"
+  },
+  {
+    "name": "infojobs_italy",
+    "country": "Italie",
+    "url_pattern": "https://www.infojobs.it/offerte-lavoro?keyword={query}",
+    "selector": ".ij-OfferCard",
+    "title_selector": ".ij-OfferCard-title",
+    "company_selector": ".ij-OfferCard-company",
+    "link_selector": "a"
+  }
+]

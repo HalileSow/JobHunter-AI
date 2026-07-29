@@ -217,7 +217,7 @@ header p {
     margin-top: 1.5rem;
 }
 
-.btn-outline, .btn-danger {
+.btn-outline, .btn-danger, .btn-confirm, .btn-apply {
     padding: 0.6rem 1rem;
     border-radius: 6px;
     cursor: pointer;
@@ -239,8 +239,48 @@ header p {
     color: white;
 }
 
-.btn-outline:hover, .btn-danger:hover {
+.btn-confirm {
+    background: #10b981;
+    color: white;
+}
+
+.btn-apply {
+    background: var(--primary);
+    color: white;
+}
+
+.btn-outline:hover, .btn-danger:hover, .btn-confirm:hover, .btn-apply:hover {
     opacity: 0.8;
+}
+
+/* Status Badges */
+.status-badge {
+    display: inline-block;
+    padding: 4px 8px;
+    border-radius: 6px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    margin-bottom: 0.75rem;
+}
+.status-submitted {
+    background: rgba(16, 185, 129, 0.15);
+    color: #10b981;
+    border: 1px solid rgba(16, 185, 129, 0.3);
+}
+.status-pending {
+    background: rgba(245, 158, 11, 0.15);
+    color: #f59e0b;
+    border: 1px solid rgba(245, 158, 11, 0.3);
+}
+.status-failed {
+    background: rgba(239, 68, 68, 0.15);
+    color: #ef4444;
+    border: 1px solid rgba(239, 68, 68, 0.3);
+}
+.status-registered {
+    background: rgba(148, 163, 184, 0.15);
+    color: #94a3b8;
+    border: 1px solid rgba(148, 163, 184, 0.3);
 }
 
 /* SEARCH FORM */
@@ -394,3 +434,54 @@ header p {
     color: var(--text-muted);
     padding: 1.5rem 0;
 }
+
+/* Toast notifications & Live indicator */
+.toast-container {
+    position: fixed;
+    bottom: 20px;
+    right: 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    z-index: 9999;
+}
+
+.toast {
+    background: #1e293b;
+    color: #f8fafc;
+    border-left: 4px solid var(--primary);
+    padding: 12px 18px;
+    border-radius: 8px;
+    box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.5);
+    font-size: 0.9rem;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    animation: slideInRight 0.3s ease-out;
+}
+
+.toast.toast-success { border-left-color: var(--accent); }
+.toast.toast-warning { border-left-color: #f59e0b; }
+.toast.toast-error { border-left-color: var(--danger); }
+
+@keyframes slideInRight {
+    from { transform: translateX(100%); opacity: 0; }
+    to { transform: translateX(0); opacity: 1; }
+}
+
+.pulse-dot {
+    display: inline-block;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background-color: var(--accent);
+    box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.7);
+    animation: pulse 1.6s infinite;
+}
+
+@keyframes pulse {
+    0% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.7); }
+    70% { transform: scale(1); box-shadow: 0 0 0 8px rgba(16, 185, 129, 0); }
+    100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(16, 185, 129, 0); }
+}
+

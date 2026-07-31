@@ -4,6 +4,15 @@
   "description": "Plateforme professionnelle pour trouver un emploi en Europe",
   "type": "module",
   "private": true,
+  "scripts": {
+    "start": "node site/server.mjs",
+    "test": "npm --prefix automation test && npm --prefix site test",
+    "test:automation": "npm --prefix automation test",
+    "test:site": "npm --prefix site test"
+  },
+  "engines": {
+    "node": ">=20"
+  },
   "devDependencies": {
     "knex": "^3.1.0"
   },

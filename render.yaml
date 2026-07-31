@@ -1,0 +1,7 @@
+services:
+  - type: web
+    name: jobhunter-ai
+    env: docker
+    autoDeploy: true
+    healthCheckPath: /api/health
+    dockerfilePath: ./Dockerfile

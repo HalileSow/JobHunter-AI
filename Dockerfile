@@ -3,38 +3,42 @@ FROM node:24-bookworm-slim AS builder
 
 WORKDIR /app
 
-# Install build dependencies if needed (e.g., for bcrypt)
+# Native modules used by sqlite3/bcrypt need build tooling.
 RUN apt-get update && apt-get install -y python3 make g++ && rm -rf /var/lib/apt/lists/*
 
 COPY package*.json ./
 COPY automation/package*.json ./automation/
 COPY site/package*.json ./site/
+
+# Install each workspace separately so the final image can run without rebuilding.
 RUN npm ci --include=dev
+RUN cd automation && npm ci
+RUN cd site && npm ci
 
 COPY . .
-RUN cd automation && npm install
-RUN cd site && npm install
 
 # Final stage
 FROM node:24-bookworm-slim
 
 WORKDIR /app
 
-# Copy built app and dependencies
+ENV NODE_ENV=production
+
 COPY --from=builder /app/package*.json ./
-COPY --from=builder /app/automation/ ./automation/
-COPY --from=builder /app/site/ ./site/
 COPY --from=builder /app/knexfile.cjs ./
 COPY --from=builder /app/database/ ./database/
 COPY --from=builder /app/config/ ./config/
 COPY --from=builder /app/cv/ ./cv/
 COPY --from=builder /app/cover_letters/ ./cover_letters/
+COPY --from=builder /app/automation/ ./automation/
+COPY --from=builder /app/site/ ./site/
+COPY --from=builder /app/node_modules/ ./node_modules/
+COPY --from=builder /app/automation/node_modules/ ./automation/node_modules/
+COPY --from=builder /app/site/node_modules/ ./site/node_modules/
 
-# Install Playwright Chromium browser and its system dependencies
+# Install the Chromium browser used by Playwright.
 RUN cd automation && npx playwright install --with-deps chromium
 
-ENV NODE_ENV=production
-ENV PORT=4173
-EXPOSE 4173
+EXPOSE 10000
 
 CMD ["node", "site/server.mjs"]

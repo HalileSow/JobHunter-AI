@@ -16,6 +16,7 @@ yarn-error.log*
 
 # Runtime data
 database/*.db
+database/backups/*.db
 
 # IDE files
 .vscode/

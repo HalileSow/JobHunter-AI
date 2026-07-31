@@ -1,5 +1,3 @@
-import fetch from 'node-fetch';
-
 /**
  * Envoie une notification via Webhook (Telegram/Slack).
  * @param {Object} job - L'offre d'emploi à notifier.
@@ -21,7 +19,12 @@ export async function sendJobNotification(job) {
     };
 
     try {
-        const response = await fetch(webhookUrl, {
+        const fetchImpl = globalThis.fetch;
+        if (typeof fetchImpl !== 'function') {
+            throw new Error('fetch global indisponible dans cet environnement Node.');
+        }
+
+        const response = await fetchImpl(webhookUrl, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(payload)

@@ -1,7 +1,7 @@
 # Guide de déploiement JobHunter-AI
 
 ## Prérequis
-- Docker et Docker Compose installés sur le serveur.
+- Docker et Docker Compose installés sur le serveur, ou un déploiement Render avec PostgreSQL.
 
 ## Déploiement
 
@@ -21,3 +21,8 @@
    `docker-compose exec app npx knex migrate:latest --knexfile knexfile.cjs`
 
 L'application sera accessible sur le port 4173.
+
+## Déploiement Render
+
+Le fichier `render.yaml` crée une base PostgreSQL gérée et injecte `DATABASE_URL` dans le service web.
+En production, l'application utilise cette base au lieu de SQLite, ce qui évite les erreurs de binaire natif `sqlite3` liées à `glibc`.

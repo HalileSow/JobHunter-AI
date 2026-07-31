@@ -6,6 +6,7 @@
   "private": true,
   "scripts": {
     "start": "node site/server.mjs",
+    "postinstall": "npm --prefix automation ci && npm --prefix site ci",
     "test": "npm --prefix automation test && npm --prefix site test",
     "test:automation": "npm --prefix automation test",
     "test:site": "npm --prefix site test"

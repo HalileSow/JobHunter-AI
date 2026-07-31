@@ -12,8 +12,6 @@ COPY site/package*.json ./site/
 
 # Install each workspace separately so the final image can run without rebuilding.
 RUN npm ci --include=dev
-RUN cd automation && npm ci
-RUN cd site && npm ci
 
 COPY . .
 

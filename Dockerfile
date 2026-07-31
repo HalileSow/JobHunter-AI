@@ -37,11 +37,6 @@ COPY --from=builder /app/node_modules/ ./node_modules/
 COPY --from=builder /app/automation/node_modules/ ./automation/node_modules/
 COPY --from=builder /app/site/node_modules/ ./site/node_modules/
 
-# Rebuild SQLite bindings explicitly so the final image cannot inherit an incompatible prebuilt binary.
-RUN npm rebuild sqlite3 --build-from-source
-RUN cd automation && npm rebuild sqlite3 --build-from-source
-RUN cd site && npm rebuild sqlite3 --build-from-source
-
 # Install the Chromium browser used by Playwright.
 RUN cd automation && npx playwright install --with-deps chromium
 

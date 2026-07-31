@@ -5,3 +5,10 @@ services:
     autoDeploy: true
     healthCheckPath: /api/health
     dockerfilePath: ./Dockerfile
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 10000
+      - key: JOBHUNTER_DB_PATH
+        value: /tmp/jobhunter.db

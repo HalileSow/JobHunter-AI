@@ -84,7 +84,15 @@ async function tick() {
 
         console.log(`⏰ [Scheduler] Déclenchement planifié : "${schedule.name}" (${schedule.title} en ${schedule.country})`);
 
-        const child = spawn(process.execPath, [automationScript, schedule.country, schedule.title, schedule.keywords || '', schedule.lang || 'fr'], {
+        const advancedFilters = JSON.stringify({
+            city: schedule.city || '',
+            experienceLevel: schedule.experience_level || '',
+            contractType: schedule.contract_type || '',
+            remote: schedule.remote || '',
+            jobType: schedule.job_type || ''
+        });
+
+        const child = spawn(process.execPath, [automationScript, schedule.country, schedule.title, schedule.keywords || '', schedule.lang || 'fr', advancedFilters], {
             cwd: __dirname,
             stdio: 'ignore',
             detached: false

@@ -3,16 +3,24 @@ import { processJobSubmission } from './submission_engine.js';
 import { defaultRegistry } from './providers/registry.js';
 import { initDb } from './db.js';
 
-export async function runSearch(country, jobTitle, keywords = '', lang = 'fr', selectedProviders = []) {
+export async function runSearch(country, jobTitle, keywords = '', lang = 'fr', selectedProviders = [], advancedFilters = {}) {
     await initDb();
     console.log(`\n🚀 [JobHunter-AI Core] Démarrage du cycle de recherche & candidature`);
-    console.log(`📌 Métier : ${jobTitle} | Mots-clés : ${keywords || 'Aucun'} | Pays : ${country} | Langue : ${lang}\n`);
+    console.log(`📌 Métier : ${jobTitle} | Mots-clés : ${keywords || 'Aucun'} | Pays : ${country} | Langue : ${lang}`);
+    if (advancedFilters.city || advancedFilters.experienceLevel || advancedFilters.contractType || advancedFilters.remote || advancedFilters.jobType) {
+        console.log(`📋 Filtres avancés : ville=${advancedFilters.city || '—'} | expérience=${advancedFilters.experienceLevel || '—'} | contrat=${advancedFilters.contractType || '—'} | remote=${advancedFilters.remote || '—'} | type=${advancedFilters.jobType || '—'}`);
+    }
 
     // 1. Exécution du moteur d'agrégation multi-providers & IA
     const searchResult = await runFullJobHunterSearch({
         country,
         jobTitle,
         keywords,
+        city: advancedFilters.city || '',
+        experienceLevel: advancedFilters.experienceLevel || '',
+        contractType: advancedFilters.contractType || '',
+        remote: advancedFilters.remote || '',
+        jobType: advancedFilters.jobType || '',
         lang,
         selectedProviderIds: selectedProviders
     });
@@ -31,12 +39,20 @@ export async function runSearch(country, jobTitle, keywords = '', lang = 'fr', s
     return searchResult;
 }
 
-const [,, country, title, keywords, lang] = process.argv;
+const [,, country, title, keywords, lang, advancedFiltersJson] = process.argv;
 if (country && title) {
-    runSearch(country, title, keywords || "", lang || 'fr').catch((error) => {
+    let advancedFilters = {};
+    if (advancedFiltersJson) {
+        try {
+            advancedFilters = JSON.parse(advancedFiltersJson);
+        } catch (e) {
+            console.warn(`⚠️ Filtres avancés invalides (JSON), ignorés : ${e.message}`);
+        }
+    }
+    runSearch(country, title, keywords || "", lang || 'fr', [], advancedFilters).catch((error) => {
         console.error(`❌ Échec du workflow : ${error.message}`);
         process.exitCode = 1;
     });
 } else {
-    console.log("Usage: node main.js <Pays> <Métier> <Mots-clés> [lang: fr|en|de]");
+    console.log("Usage: node main.js <Pays> <Métier> <Mots-clés> [lang: fr|en|de] [advancedFiltersJson]");
 }

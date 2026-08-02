@@ -18,8 +18,8 @@ export class CareerPagesProvider extends BaseProvider {
         });
     }
 
-    async searchJobs({ country, jobTitle, keywords = '', limit = 20 }) {
-        console.log(`🏢 [CareerPagesProvider] Exploration dynamique des sites carrières...`);
+    async searchJobs({ country, jobTitle, keywords = '', city = '', experienceLevel = '', contractType = '', remote = '', jobType = '', limit = 20 }) {
+        console.log(`🏢 [CareerPagesProvider] Exploration dynamique des sites carrières: ${jobTitle} ville=${city}...`);
 
         let configPath = path.resolve(__dirname, '../../../config/career_pages.json');
         let careerPages = [];
@@ -58,12 +58,19 @@ export class CareerPagesProvider extends BaseProvider {
                     const bodyText = await page.innerText('body');
                     if (bodyText.length < 150) continue;
 
+                    const filters = [
+                        city ? `ville="${city}"` : '',
+                        contractType ? `type contrat="${contractType}"` : '',
+                        remote === 'full_remote' ? 'télétravail=oui' : '',
+                        experienceLevel ? `expérience="${experienceLevel}"` : ''
+                    ].filter(Boolean).join(', ');
+
                     const prompt = `Tu es un assistant de recrutement.
 Voici le contenu texte brut du site carrières de l'entreprise "${cp.company}" :
 ---
 ${bodyText.substring(0, 8000)}
 ---
-Extrais jusqu'à 3 offres d'emploi qui correspondent au poste "${jobTitle}" / mots-clés "${keywords}".
+Extrais jusqu'à 3 offres d'emploi qui correspondent au poste "${jobTitle}" / mots-clés "${keywords}"${filters ? `. Filtres supplémentaires : ${filters}` : ''}.
 Format JSON strict :
 [
   {
@@ -71,7 +78,10 @@ Format JSON strict :
     "company": "${cp.company}",
     "link": "${searchUrl}",
     "location": "${country}",
+    "city": "${city}",
     "contract_type": "CDI/CDD",
+    "experience_level": "",
+    "remote": "on_site",
     "salary": "N/A",
     "date_posted": "${new Date().toISOString().split('T')[0]}"
   }

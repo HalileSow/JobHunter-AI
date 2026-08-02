@@ -25,6 +25,7 @@ services:
       DATABASE_URL: ${DATABASE_URL:-postgresql://user:password@db:5432/jobhunter}
       NODE_ENV: production
       PORT: 4173
+      JWT_SECRET: ${JWT_SECRET:-changez-ce-secret-en-production}
     ports:
       - "4173:4173"
     depends_on:

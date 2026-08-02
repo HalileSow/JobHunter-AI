@@ -12,13 +12,12 @@ export class FranceTravailProvider extends BaseProvider {
         });
     }
 
-    async searchJobs({ country, jobTitle, keywords = '', limit = 20 }) {
-        console.log(`🔍 [FranceTravailProvider] Recherche: ${jobTitle} (${keywords})...`);
+    async searchJobs({ country, jobTitle, keywords = '', city = '', experienceLevel = '', contractType = '', remote = '', jobType = '', limit = 20 }) {
+        console.log(`🔍 [FranceTravailProvider] Recherche: ${jobTitle} (${keywords}) ville=${city} contrat=${contractType} remote=${remote}...`);
 
         const clientId = process.env.FRANCE_TRAVAIL_CLIENT_ID;
         const clientSecret = process.env.FRANCE_TRAVAIL_CLIENT_SECRET;
 
-        // Fallback simulateur/public endpoint if credentials are not specified
         if (!clientId || !clientSecret) {
             console.warn(`⚠️ [FranceTravailProvider] Credentials FRANCE_TRAVAIL_CLIENT_ID / CLIENT_SECRET non configurés.`);
             console.log(`ℹ️ [FranceTravailProvider] Utilisation de la passerelle d'accès public France Travail.`);
@@ -26,7 +25,6 @@ export class FranceTravailProvider extends BaseProvider {
         }
 
         try {
-            // 1. Get OAuth Token
             const tokenUrl = 'https://entreprise.francetravail.fr/connexion/oauth2/access_token?realm=/partenaire';
             const authParams = new URLSearchParams();
             authParams.append('grant_type', 'client_credentials');
@@ -41,8 +39,22 @@ export class FranceTravailProvider extends BaseProvider {
 
             const accessToken = tokenRes.data.access_token;
 
-            // 2. Search jobs
-            const searchUrl = `https://api.francetravail.io/partenaire/offresdemploi/v2/offres/search?motsCles=${encodeURIComponent(jobTitle + ' ' + keywords)}&range=0-${limit - 1}`;
+            const searchParams = new URLSearchParams();
+            searchParams.append('motsCles', `${jobTitle} ${keywords}`.trim());
+            searchParams.append('range', `0-${limit - 1}`);
+
+            if (city) searchParams.append('commune', city);
+            if (contractType) {
+                const typeMap = { 'CDI': 'CDI', 'CDD': 'CDD', 'Stage': 'STAGE', 'Alternance': 'ALTERNANCE', 'Freelance': 'FREELANCE' };
+                if (typeMap[contractType]) searchParams.append('typeContrat', typeMap[contractType]);
+            }
+            if (remote === 'full_remote') searchParams.append('teletravail', '1');
+            if (experienceLevel) {
+                const expMap = { 'junior': '0-2', 'mid': '2-5', 'senior': '5-10', 'director': '10+' };
+                if (expMap[experienceLevel]) searchParams.append('experience', expMap[experienceLevel]);
+            }
+
+            const searchUrl = `https://api.francetravail.io/partenaire/offresdemploi/v2/offres/search?${searchParams.toString()}`;
             const { data } = await axios.get(searchUrl, {
                 headers: { 'Authorization': `Bearer ${accessToken}` },
                 timeout: 10000
@@ -55,8 +67,11 @@ export class FranceTravailProvider extends BaseProvider {
                 company: off.entreprise?.nom || 'Entreprise anonyme',
                 link: off.origineOffre?.urlOrigine || `https://candidat.francetravail.fr/offres/recherche/detail/${off.id}`,
                 location: off.lieuTravail?.libelle || 'France',
+                city: off.lieuTravail?.libelle || '',
                 salary: off.salaire?.libelle || 'Non spécifié',
                 contract_type: off.typeContratLibelle || off.typeContrat || 'CDI/CDD',
+                experience_level: experienceLevel,
+                remote: off.teletravail ? 'full_remote' : 'on_site',
                 date_posted: off.dateCreation ? off.dateCreation.split('T')[0] : new Date().toISOString().split('T')[0],
                 provider: this.id,
                 provider_name: this.name,

@@ -12,9 +12,9 @@ export class IndeedProvider extends BaseProvider {
         });
     }
 
-    async searchJobs({ country, jobTitle, keywords = '', limit = 20 }) {
-        console.log(`🔍 [IndeedProvider] Recherche: ${jobTitle} (${keywords}) en ${country}...`);
-        
+    async searchJobs({ country, jobTitle, keywords = '', city = '', experienceLevel = '', contractType = '', remote = '', jobType = '', limit = 20 }) {
+        console.log(`🔍 [IndeedProvider] Recherche: ${jobTitle} (${keywords}) en ${country} ville=${city}...`);
+
         const countryDomains = {
             'France': 'fr.indeed.com',
             'Allemagne': 'de.indeed.com',
@@ -24,11 +24,16 @@ export class IndeedProvider extends BaseProvider {
             'Suisse': 'ch.indeed.com',
             'Canada': 'ca.indeed.com'
         };
-        
+
         const domain = countryDomains[country] || 'www.indeed.com';
         const query = encodeURIComponent(`${jobTitle} ${keywords}`.trim());
-        const loc = encodeURIComponent(country);
-        const url = `https://${domain}/jobs?q=${query}&l=${loc}`;
+        const loc = encodeURIComponent(city ? `${city}, ${country}` : country);
+        let url = `https://${domain}/jobs?q=${query}&l=${loc}`;
+        if (remote === 'full_remote') url += '&remotejob=032b3046-06a3-4876-8dfd-474eb5e7ed11';
+        if (jobType === 'full_time') url += '&jt=fulltime';
+        if (jobType === 'part_time') url += '&jt=parttime';
+        if (contractType === 'CDD') url += '&jt=contract';
+        if (contractType === 'Stage') url += '&jt=internship';
 
         try {
             const scraped = await browserScrape(
@@ -43,9 +48,13 @@ export class IndeedProvider extends BaseProvider {
                 title: job.title,
                 company: job.company || 'Entreprise non spécifiée',
                 link: job.link.startsWith('http') ? job.link : `https://${domain}${job.link}`,
-                location: country,
+                location: city ? `${city}, ${country}` : country,
+                city: city || '',
                 salary: 'N/A',
-                contract_type: 'Non spécifié',
+                contract_type: contractType || 'Non spécifié',
+                experience_level: experienceLevel || '',
+                remote: remote || '',
+                job_type: jobType || '',
                 date_posted: new Date().toISOString().split('T')[0],
                 provider: this.id,
                 provider_name: this.name,

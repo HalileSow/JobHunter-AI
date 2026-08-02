@@ -97,9 +97,85 @@ export function deduplicateJobs(jobs) {
 }
 
 /**
+ * Filtre les offres selon les critères de recherche avancés.
+ * Les critères vides/undefined sont ignorés (pas de filtre).
+ */
+export function applySearchFilters(jobs, { city, experienceLevel, contractType, remote, jobType }) {
+    return jobs.filter(job => {
+        if (city) {
+            const jobCity = (job.city || job.location || '').toLowerCase();
+            const searchCity = city.toLowerCase();
+            if (!jobCity.includes(searchCity) && searchCity !== 'remote' && searchCity !== 'télétravail') return false;
+        }
+        if (contractType) {
+            const jobContract = (job.contract_type || '').toLowerCase();
+            const searchContract = contractType.toLowerCase();
+            const contractAliases = {
+                'cdi': ['cdi', 'permanent', 'plein temps', 'full-time'],
+                'cdd': ['cdd', 'cdi', 'contract', 'temporaire'],
+                'stage': ['stage', 'internship', 'stagiaire'],
+                'alternance': ['alternance', 'apprenti', 'apprentissage', 'work-study'],
+                'freelance': ['freelance', 'indépendant', 'contractor']
+            };
+            const allowed = contractAliases[searchContract] || [searchContract];
+            if (!allowed.some(alias => jobContract.includes(alias))) return false;
+        }
+        if (remote === 'full_remote') {
+            const jobRemote = (job.remote || '').toLowerCase();
+            const jobLocation = (job.location || '').toLowerCase();
+            const jobTitle = (job.title || '').toLowerCase();
+            const isRemote = jobRemote.includes('remote') || jobRemote.includes('full_remote')
+                || jobLocation.includes('remote') || jobLocation.includes('télétravail')
+                || jobTitle.includes('remote');
+            if (!isRemote) return false;
+        }
+        if (remote === 'on_site') {
+            const jobRemote = (job.remote || '').toLowerCase();
+            const jobLocation = (job.location || '').toLowerCase();
+            const jobTitle = (job.title || '').toLowerCase();
+            const isOnSite = jobRemote.includes('on_site')
+                || jobRemote.includes('onsite')
+                || jobLocation.includes('présentiel')
+                || jobLocation.includes('presentiel')
+                || jobLocation.includes('on site')
+                || jobTitle.includes('on site')
+                || jobTitle.includes('présentiel')
+                || jobTitle.includes('presentiel');
+
+            if (!isOnSite) return false;
+        }
+        if (experienceLevel) {
+            const jobExp = (job.experience_level || '').toLowerCase();
+            const jobDesc = (job.description || '').toLowerCase();
+            const jobTitleLower = (job.title || '').toLowerCase();
+            const combined = `${jobExp} ${jobDesc} ${jobTitleLower}`;
+            const expAliases = {
+                'junior': ['junior', '0-2', 'débutant', 'entry', 'entry-level'],
+                'mid': ['mid', '2-5', 'confirmé', 'intermediate'],
+                'senior': ['senior', '5-10', 'expérimenté', 'senior'],
+                'director': ['director', '10+', 'directeur', 'head', 'lead', 'manager']
+            };
+            const allowed = expAliases[experienceLevel] || [experienceLevel];
+            if (!allowed.some(alias => combined.includes(alias))) return false;
+        }
+        if (jobType) {
+            const jobTypeStr = (job.job_type || job.contract_type || '').toLowerCase();
+            const typeAliases = {
+                'full_time': ['full', 'plein', 'cdi', 'permanent', 'full-time'],
+                'part_time': ['part', 'temps partiel', 'mi-temps', 'part-time'],
+                'internship': ['stage', 'internship']
+            };
+            const allowed = typeAliases[jobType] || [jobType];
+            if (!allowed.some(alias => jobTypeStr.includes(alias))) return false;
+        }
+        return true;
+    });
+}
+
+/**
  * Exécute la recherche multi-providers en parallèle et retourne la liste dédoublonnée.
  */
-export async function executeMultiProviderSearch({ country, jobTitle, keywords = '', selectedProviderIds = [], limit = 30 }) {
+export async function executeMultiProviderSearch({ country, jobTitle, keywords = '', city = '', experienceLevel = '', contractType = '', remote = '', jobType = '', selectedProviderIds = [], limit = 30 }) {
     let providersToUse = [];
 
     if (selectedProviderIds && selectedProviderIds.length > 0) {
@@ -116,13 +192,15 @@ export async function executeMultiProviderSearch({ country, jobTitle, keywords =
     }
 
     console.log(`🌐 Recherche en parallèle sur ${providersToUse.length} provider(s) : ${providersToUse.map(p => p.name).join(', ')}...`);
+    console.log(`📋 Filtres : pays=${country}, ville=${city || '—'}, expérience=${experienceLevel || '—'}, contrat=${contractType || '—'}, remote=${remote || '—'}, type=${jobType || '—'}`);
 
-    // Timeout de sécurité par provider (30s)
     const timeoutMs = 30000;
+
+    const searchParams = { country, jobTitle, keywords, city, experienceLevel, contractType, remote, jobType, limit };
 
     const providerPromises = providersToUse.map(provider => {
         return Promise.race([
-            provider.searchJobs({ country, jobTitle, keywords, limit }),
+            provider.searchJobs(searchParams),
             new Promise((_, reject) => setTimeout(() => reject(new Error(`Timeout provider ${provider.name}`)), timeoutMs))
         ]).catch(err => {
             console.error(`❌ Échec ou timeout sur ${provider.name} : ${err.message}`);
@@ -135,22 +213,26 @@ export async function executeMultiProviderSearch({ country, jobTitle, keywords =
 
     console.log(`📊 Brut d'offres récupérées : ${rawJobs.length}`);
 
-    // Dédoublonnage intelligent
     const uniqueJobs = deduplicateJobs(rawJobs);
     console.log(`✨ Après dédoublonnage intelligent : ${uniqueJobs.length} offre(s) uniques.`);
 
-    return uniqueJobs;
+    const filteredJobs = applySearchFilters(uniqueJobs, { city, experienceLevel, contractType, remote, jobType });
+    if (filteredJobs.length !== uniqueJobs.length) {
+        console.log(`🔍 Après filtrage avancé : ${filteredJobs.length} offre(s) correspondent aux critères.`);
+    }
+
+    return filteredJobs;
 }
 
 /**
  * Moteur complet : Recherche multi-providers, dédoublonnage, sélection du CV, scoring IA,
  * génération de la lettre de motivation PDF, et enregistrement en base de données.
  */
-export async function runFullJobHunterSearch({ country, jobTitle, keywords = '', lang = 'fr', selectedProviderIds = [] }) {
+export async function runFullJobHunterSearch({ country, jobTitle, keywords = '', city = '', experienceLevel = '', contractType = '', remote = '', jobType = '', lang = 'fr', selectedProviderIds = [] }) {
     const db = await initDb();
 
-    // 1. Démarrer la recherche multi-providers
-    const uniqueJobs = await executeMultiProviderSearch({ country, jobTitle, keywords, selectedProviderIds });
+    // 1. Démarrer la recherche multi-providers avec filtres avancés
+    const uniqueJobs = await executeMultiProviderSearch({ country, jobTitle, keywords, city, experienceLevel, contractType, remote, jobType, selectedProviderIds });
 
     if (uniqueJobs.length === 0) {
         console.log(`ℹ️ Aucune nouvelle offre trouvée pour ${jobTitle} en ${country}.`);
@@ -202,18 +284,26 @@ export async function runFullJobHunterSearch({ country, jobTitle, keywords = '',
             const providerInstance = defaultRegistry.get(job.provider);
             const isAutoApplySupported = providerInstance ? (providerInstance.supportsAutoApply(job) ? 1 : 0) : 0;
 
-            // E. Sauvegarde en BDD
+            // E. Sauvegarde en BDD avec les champs avancés
             const [insertedId] = await db('jobs').insert({
                 title: job.title,
                 company: job.company,
                 link: job.link,
                 country: country,
+                city: job.city || city || '',
                 score: aiResult.score,
                 letter: aiResult.letter,
                 analysis: aiResult.analysis,
                 status: 'Enregistré',
                 salary: job.salary || 'N/A',
-                contract_type: job.contract_type || 'Non spécifié',
+                contract_type: job.contract_type || contractType || 'Non spécifié',
+                experience_level: job.experience_level || experienceLevel || '',
+                remote: job.remote || remote || '',
+                job_type: job.job_type || jobType || '',
+                search_city: city || '',
+                search_experience_level: experienceLevel || '',
+                search_remote: remote || '',
+                search_contract_type: contractType || '',
                 date_posted: job.date_posted || new Date().toISOString().split('T')[0],
                 selected_cv_id: selectedCv.id,
                 pdf_path: pdfPath,

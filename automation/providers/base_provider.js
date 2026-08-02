@@ -37,10 +37,15 @@ export class BaseProvider {
      * @param {string} params.country - Target country (e.g. 'France', 'Allemagne', 'Côte d'Ivoire')
      * @param {string} params.jobTitle - Job title (e.g. 'Développeur Fullstack', 'Vendeur')
      * @param {string} [params.keywords=''] - Additional keywords
+     * @param {string} [params.city=''] - Target city filter
+     * @param {string} [params.experienceLevel=''] - Experience level (junior, mid, senior, director)
+     * @param {string} [params.contractType=''] - Contract type (CDI, CDD, Freelance, Stage, Alternance)
+     * @param {string} [params.remote=''] - Remote policy (full_remote, hybrid, on_site, any)
+     * @param {string} [params.jobType=''] - Job type (full_time, part_time, internship)
      * @param {number} [params.limit=20] - Max results
      * @returns {Promise<Array<Object>>} List of JobOffer objects
      */
-    async searchJobs({ country, jobTitle, keywords = '', limit = 20 }) {
+    async searchJobs({ country, jobTitle, keywords = '', city = '', experienceLevel = '', contractType = '', remote = '', jobType = '', limit = 20 }) {
         throw new Error(`searchJobs() method must be implemented by provider ${this.id}`);
     }
 

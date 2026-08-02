@@ -12,8 +12,8 @@ export class AdzunaProvider extends BaseProvider {
         });
     }
 
-    async searchJobs({ country, jobTitle, keywords = '', limit = 20 }) {
-        console.log(`🔍 [AdzunaProvider] Recherche API: ${jobTitle} (${keywords}) en ${country}...`);
+    async searchJobs({ country, jobTitle, keywords = '', city = '', experienceLevel = '', contractType = '', remote = '', jobType = '', limit = 20 }) {
+        console.log(`🔍 [AdzunaProvider] Recherche API: ${jobTitle} (${keywords}) en ${country} ville=${city}...`);
 
         const countryCodes = {
             "France": "fr", "Allemagne": "de", "Autriche": "at",
@@ -31,7 +31,22 @@ export class AdzunaProvider extends BaseProvider {
         }
 
         try {
-            const url = `https://api.adzuna.com/v1/api/jobs/${countryCode}/search/1?app_id=${appId}&app_key=${appKey}&results_per_page=${limit}&what=${encodeURIComponent(jobTitle + " " + keywords)}`;
+            const searchParams = new URLSearchParams();
+            searchParams.append('app_id', appId);
+            searchParams.append('app_key', appKey);
+            searchParams.append('results_per_page', String(limit));
+            searchParams.append('what', `${jobTitle} ${keywords}`.trim());
+
+            if (city) searchParams.append('where', city);
+            if (contractType) {
+                const contractMap = { 'CDI': 'permanent', 'CDD': 'contract', 'Stage': 'internship', 'Freelance': 'contract' };
+                if (contractMap[contractType]) searchParams.append('contract_type', contractMap[contractType]);
+            }
+            if (remote === 'full_remote') searchParams.append('work_from_home', 'true');
+            if (jobType === 'part_time') searchParams.append('part_time', 'true');
+            if (jobType === 'full_time') searchParams.append('full_time', 'true');
+
+            const url = `https://api.adzuna.com/v1/api/jobs/${countryCode}/search/1?${searchParams.toString()}`;
             const { data } = await axios.get(url, { timeout: 10000 });
 
             if (!data.results) return [];
@@ -41,8 +56,12 @@ export class AdzunaProvider extends BaseProvider {
                 company: job.company?.display_name || 'Inconnue',
                 link: job.redirect_url,
                 location: job.location?.display_name || country,
+                city: job.location?.display_name || '',
                 salary: job.salary_min ? `${Math.round(job.salary_min)} - ${Math.round(job.salary_max)}` : "Non spécifié",
                 contract_type: job.contract_type || "Plein temps",
+                experience_level: '',
+                remote: job.work_from_home ? 'full_remote' : 'on_site',
+                job_type: job.contract_time === 'part_time' ? 'part_time' : 'full_time',
                 date_posted: job.created ? job.created.split('T')[0] : new Date().toISOString().split('T')[0],
                 provider: this.id,
                 provider_name: this.name,

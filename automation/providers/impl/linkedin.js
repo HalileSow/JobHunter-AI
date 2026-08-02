@@ -12,11 +12,11 @@ export class LinkedInProvider extends BaseProvider {
         });
     }
 
-    async searchJobs({ country, jobTitle, keywords = '', limit = 20 }) {
-        console.log(`🔍 [LinkedInProvider] Recherche: ${jobTitle} (${keywords}) en ${country}...`);
-        
+    async searchJobs({ country, jobTitle, keywords = '', city = '', experienceLevel = '', contractType = '', remote = '', jobType = '', limit = 20 }) {
+        console.log(`🔍 [LinkedInProvider] Recherche: ${jobTitle} (${keywords}) en ${country} ville=${city}...`);
+
         const query = encodeURIComponent(`${jobTitle} ${keywords}`.trim());
-        const loc = encodeURIComponent(country);
+        const loc = encodeURIComponent(city ? `${city}, ${country}` : country);
         const url = `https://www.linkedin.com/jobs/search?keywords=${query}&location=${loc}&f_TPR=r604800`;
 
         try {
@@ -32,9 +32,13 @@ export class LinkedInProvider extends BaseProvider {
                 title: job.title,
                 company: job.company,
                 link: job.link,
-                location: country,
+                location: city ? `${city}, ${country}` : country,
+                city: city || '',
                 salary: 'N/A',
-                contract_type: 'CDI / Non spécifié',
+                contract_type: contractType || 'CDI / Non spécifié',
+                experience_level: experienceLevel || '',
+                remote: remote || '',
+                job_type: jobType || '',
                 date_posted: new Date().toISOString().split('T')[0],
                 provider: this.id,
                 provider_name: this.name,

@@ -12,8 +12,8 @@ export class AtsProvider extends BaseProvider {
         });
     }
 
-    async searchJobs({ country, jobTitle, keywords = '', limit = 20 }) {
-        console.log(`🏢 [AtsProvider] Recherche sur les plateformes d'entreprises ATS...`);
+    async searchJobs({ country, jobTitle, keywords = '', city = '', experienceLevel = '', contractType = '', remote = '', jobType = '', limit = 20 }) {
+        console.log(`🏢 [AtsProvider] Recherche sur les plateformes d'entreprises ATS: ${jobTitle} ville=${city}...`);
         
         // Example integration for popular public ATS endpoints (Greenhouse, Lever)
         const sampleAtsBoards = [
@@ -38,13 +38,19 @@ export class AtsProvider extends BaseProvider {
                             keywords.split(' ').some(k => k && j.title.toLowerCase().includes(k.toLowerCase()))
                         );
                         matched.forEach(j => {
+                            const locName = j.location?.name || 'International / Multiple';
+                            const isRemote = locName.toLowerCase().includes('remote') || locName.toLowerCase().includes('virtual');
                             results.push({
                                 title: j.title,
                                 company: board.company,
                                 link: j.absolute_url,
-                                location: j.location?.name || 'International / Multiple',
+                                location: locName,
+                                city: city || '',
                                 salary: 'Selon grille entreprise',
-                                contract_type: 'CDI / Full-time',
+                                contract_type: contractType || 'CDI / Full-time',
+                                experience_level: experienceLevel || '',
+                                remote: isRemote ? 'full_remote' : (remote || 'on_site'),
+                                job_type: jobType || 'full_time',
                                 date_posted: j.updated_at ? j.updated_at.split('T')[0] : new Date().toISOString().split('T')[0],
                                 provider: this.id,
                                 provider_name: `${this.name} (${board.company})`,

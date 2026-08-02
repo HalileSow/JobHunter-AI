@@ -15,15 +15,34 @@ function sqliteConfig() {
   };
 }
 
+function postgresConfig() {
+  const connectionString = process.env.DATABASE_URL;
+  if (!connectionString) return null;
+
+  return {
+    client: 'pg',
+    connection: {
+      connectionString,
+      ssl: process.env.PG_SSL === 'true' ? { rejectUnauthorized: false } : false
+    },
+    pool: {
+      min: 2,
+      max: 10,
+      acquireTimeoutMillis: 30000,
+      idleTimeoutMillis: 60000
+    },
+    useNullAsDefault: true,
+    migrations: {
+      directory: path.resolve(__dirname, 'database/migrations'),
+      tableName: 'knex_migrations',
+      schemaName: 'public'
+    }
+  };
+}
+
 module.exports = {
   development: sqliteConfig(),
-  production: process.env.DATABASE_URL
-    ? {
-        client: 'pg',
-        connection: process.env.DATABASE_URL,
-        migrations: {
-          directory: './database/migrations'
-        }
-      }
-    : sqliteConfig()
+  test: sqliteConfig(),
+  production: postgresConfig() || sqliteConfig(),
+  postgres: postgresConfig()
 };

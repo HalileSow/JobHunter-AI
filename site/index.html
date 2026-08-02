@@ -18,6 +18,7 @@
             <nav>
                 <button class="nav-item active" data-tab="dashboard"><i class="fas fa-chart-line"></i> Tableau de bord</button>
                 <button class="nav-item" data-tab="search"><i class="fas fa-search"></i> Recherche Multi-Providers</button>
+                <button class="nav-item" data-tab="configs"><i class="fas fa-sliders-h"></i> Configurations</button>
                 <button class="nav-item" data-tab="providers"><i class="fas fa-plug"></i> Sources & Providers</button>
                 <button class="nav-item" data-tab="scheduler"><i class="fas fa-clock"></i> Planificateur</button>
                 <button class="nav-item" data-tab="cvs"><i class="fas fa-file-alt"></i> Mes CV</button>
@@ -78,12 +79,58 @@
                         <input type="text" id="search-keywords" placeholder="ex: React, Node.js, Vente, Excel">
                     </div>
                     <div class="form-group">
-                        <label>Langue de rédaction (Lettre PDF)</label>
-                        <select id="search-lang">
-                            <option value="fr">Français</option>
-                            <option value="en">Anglais</option>
-                            <option value="de">Allemand</option>
-                        </select>
+                        <label>Ville</label>
+                        <input type="text" id="search-city" placeholder="ex: Paris, Berlin, Luxembourg">
+                    </div>
+                    <div class="form-row" style="display:flex;gap:12px;">
+                        <div class="form-group" style="flex:1;">
+                            <label>Niveau d'expérience</label>
+                            <select id="search-experience">
+                                <option value="">Tous niveaux</option>
+                                <option value="junior">Junior (0-2 ans)</option>
+                                <option value="mid">Confirmé (2-5 ans)</option>
+                                <option value="senior">Senior (5-10 ans)</option>
+                                <option value="director">Directeur / Manager (10+ ans)</option>
+                            </select>
+                        </div>
+                        <div class="form-group" style="flex:1;">
+                            <label>Type de contrat</label>
+                            <select id="search-contract">
+                                <option value="">Tous contrats</option>
+                                <option value="CDI">CDI</option>
+                                <option value="CDD">CDD</option>
+                                <option value="Stage">Stage</option>
+                                <option value="Alternance">Alternance</option>
+                                <option value="Freelance">Freelance</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="form-row" style="display:flex;gap:12px;">
+                        <div class="form-group" style="flex:1;">
+                            <label>Télétravail</label>
+                            <select id="search-remote">
+                                <option value="">Indifférent</option>
+                                <option value="full_remote">100% télétravail</option>
+                                <option value="hybrid">Hybride</option>
+                                <option value="on_site">Présentiel</option>
+                            </select>
+                        </div>
+                        <div class="form-group" style="flex:1;">
+                            <label>Temps de travail</label>
+                            <select id="search-jobtype">
+                                <option value="">Indifférent</option>
+                                <option value="full_time">Temps plein</option>
+                                <option value="part_time">Temps partiel</option>
+                            </select>
+                        </div>
+                        <div class="form-group" style="flex:1;">
+                            <label>Langue de rédaction (Lettre PDF)</label>
+                            <select id="search-lang">
+                                <option value="fr">Français</option>
+                                <option value="en">Anglais</option>
+                                <option value="de">Allemand</option>
+                            </select>
+                        </div>
                     </div>
                     <button id="btn-launch-search" class="btn-primary">
                         <i class="fas fa-rocket"></i> Lancer la recherche multi-providers
@@ -93,6 +140,66 @@
                     <h2>Historique des recherches en arrière-plan (24/7)</h2>
                     <div id="search-runs-list" class="runs-list"></div>
                 </div>
+            </section>
+
+            <!-- TAB: CONFIGS -->
+            <section id="configs" class="tab-content">
+                <header>
+                    <h1>Configurations de Recherche</h1>
+                    <p>Sauvegardez et réutilisez vos recherches favorites avec tous les filtres avancés.</p>
+                </header>
+                <div class="search-form" style="margin-bottom: 2rem;">
+                    <h3 style="margin-bottom: 1rem;"><i class="fas fa-plus-circle"></i> Nouvelle configuration</h3>
+                    <div class="form-group">
+                        <label>Nom de la configuration</label>
+                        <input type="text" id="cfg-name" placeholder="Ex: Dev Fullstack Paris CDI">
+                    </div>
+                    <div class="form-row" style="display:flex;gap:12px;">
+                        <div class="form-group" style="flex:1;"><label>Pays</label><input type="text" id="cfg-country" value="France"></div>
+                        <div class="form-group" style="flex:1;"><label>Ville</label><input type="text" id="cfg-city" placeholder="ex: Paris"></div>
+                    </div>
+                    <div class="form-row" style="display:flex;gap:12px;">
+                        <div class="form-group" style="flex:1;"><label>Métier / Poste</label><input type="text" id="cfg-title" placeholder="Ex: Développeur Fullstack"></div>
+                        <div class="form-group" style="flex:1;"><label>Mots-clés</label><input type="text" id="cfg-keywords" placeholder="Ex: React, Node.js"></div>
+                    </div>
+                    <div class="form-row" style="display:flex;gap:12px;">
+                        <div class="form-group" style="flex:1;">
+                            <label>Expérience</label>
+                            <select id="cfg-experience">
+                                <option value="">Tous niveaux</option>
+                                <option value="junior">Junior</option>
+                                <option value="mid">Confirmé</option>
+                                <option value="senior">Senior</option>
+                                <option value="director">Directeur</option>
+                            </select>
+                        </div>
+                        <div class="form-group" style="flex:1;">
+                            <label>Contrat</label>
+                            <select id="cfg-contract">
+                                <option value="">Tous contrats</option>
+                                <option value="CDI">CDI</option>
+                                <option value="CDD">CDD</option>
+                                <option value="Stage">Stage</option>
+                                <option value="Alternance">Alternance</option>
+                                <option value="Freelance">Freelance</option>
+                            </select>
+                        </div>
+                        <div class="form-group" style="flex:1;">
+                            <label>Télétravail</label>
+                            <select id="cfg-remote">
+                                <option value="">Indifférent</option>
+                                <option value="full_remote">100% Remote</option>
+                                <option value="hybrid">Hybride</option>
+                                <option value="on_site">Présentiel</option>
+                            </select>
+                        </div>
+                    </div>
+                    <button id="btn-save-config" class="btn-primary">
+                        <i class="fas fa-save"></i> Sauvegarder la configuration
+                    </button>
+                </div>
+                <h3>Configurations sauvegardées</h3>
+                <div id="configs-list" style="margin-top: 1rem;"></div>
             </section>
 
             <!-- TAB: PROVIDERS -->
@@ -123,7 +230,39 @@
                         <div class="form-group" style="flex:1;"><label>Métier / Poste</label><input type="text" id="sched-title" placeholder="Ex: Développeur Fullstack"></div>
                     </div>
                     <div class="form-row" style="display:flex;gap:12px;">
+                        <div class="form-group" style="flex:1;"><label>Ville</label><input type="text" id="sched-city" placeholder="Ex: Paris, Berlin"></div>
                         <div class="form-group" style="flex:1;"><label>Mots-clés</label><input type="text" id="sched-keywords" placeholder="Ex: React, Node.js"></div>
+                    </div>
+                    <div class="form-row" style="display:flex;gap:12px;">
+                        <div class="form-group" style="flex:1;">
+                            <label>Expérience</label>
+                            <select id="sched-experience">
+                                <option value="">Tous niveaux</option>
+                                <option value="junior">Junior</option>
+                                <option value="mid">Confirmé</option>
+                                <option value="senior">Senior</option>
+                                <option value="director">Directeur</option>
+                            </select>
+                        </div>
+                        <div class="form-group" style="flex:1;">
+                            <label>Contrat</label>
+                            <select id="sched-contract">
+                                <option value="">Tous contrats</option>
+                                <option value="CDI">CDI</option>
+                                <option value="CDD">CDD</option>
+                                <option value="Stage">Stage</option>
+                                <option value="Alternance">Alternance</option>
+                            </select>
+                        </div>
+                        <div class="form-group" style="flex:1;">
+                            <label>Télétravail</label>
+                            <select id="sched-remote">
+                                <option value="">Indifférent</option>
+                                <option value="full_remote">100% Remote</option>
+                                <option value="hybrid">Hybride</option>
+                                <option value="on_site">Présentiel</option>
+                            </select>
+                        </div>
                         <div class="form-group" style="flex:1;">
                             <label>Fréquence (cron)</label>
                             <select id="sched-cron">

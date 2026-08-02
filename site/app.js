@@ -95,6 +95,7 @@ document.querySelectorAll('.nav-item').forEach(btn => {
         
         if (btn.dataset.tab === 'dashboard') loadJobs();
         if (btn.dataset.tab === 'search') loadSearchRuns();
+        if (btn.dataset.tab === 'configs') loadConfigs();
         if (btn.dataset.tab === 'providers') loadProviders();
         if (btn.dataset.tab === 'scheduler') loadSchedules();
         if (btn.dataset.tab === 'cvs') loadCvs();
@@ -274,6 +275,11 @@ document.getElementById('btn-launch-search').addEventListener('click', async () 
         country: document.getElementById('search-country').value,
         title: document.getElementById('search-title').value,
         keywords: document.getElementById('search-keywords').value,
+        city: document.getElementById('search-city').value,
+        experienceLevel: document.getElementById('search-experience').value,
+        contractType: document.getElementById('search-contract').value,
+        remote: document.getElementById('search-remote').value,
+        jobType: document.getElementById('search-jobtype').value,
         lang: document.getElementById('search-lang').value
     };
 
@@ -390,6 +396,102 @@ document.getElementById('profile-form').addEventListener('submit', async (event)
     }
 });
 
+// === SEARCH CONFIGS ===
+
+async function loadConfigs() {
+    try {
+        const configs = await api('/search-configs');
+        const list = document.getElementById('configs-list');
+        if (!list) return;
+
+        list.innerHTML = configs.length ? configs.map(c => {
+            const filters = [
+                c.city ? `<i class="fas fa-map-marker-alt"></i> ${escapeHtml(c.city)}` : '',
+                c.experience_level ? `<i class="fas fa-chart-bar"></i> ${escapeHtml(c.experience_level)}` : '',
+                c.contract_type ? `<i class="fas fa-file-contract"></i> ${escapeHtml(c.contract_type)}` : '',
+                c.remote ? `<i class="fas fa-wifi"></i> ${escapeHtml(c.remote)}` : '',
+                c.job_type ? `<i class="fas fa-briefcase"></i> ${escapeHtml(c.job_type)}` : ''
+            ].filter(Boolean).join(' | ');
+
+            return `
+                <div class="run-item" style="display:flex; justify-content:space-between; align-items:center; padding:14px; background: var(--bg-card); border-radius:10px; border-left: 4px solid #6366f1; margin-bottom: 10px;">
+                    <div>
+                        <strong style="font-size: 1.05rem;">${escapeHtml(c.name)}</strong>
+                        <div style="color: #9ca3af; font-size: 0.85rem; margin-top: 4px;">
+                            <i class="fas fa-briefcase"></i> ${escapeHtml(c.title)} | <i class="fas fa-globe"></i> ${escapeHtml(c.country)}
+                            ${c.keywords ? ` | <i class="fas fa-tags"></i> ${escapeHtml(c.keywords)}` : ''}
+                        </div>
+                        ${filters ? `<div style="color: #a5b4fc; font-size: 0.8rem; margin-top: 4px;">${filters}</div>` : ''}
+                    </div>
+                    <div style="display:flex; gap:8px; align-items:center;">
+                        <button onclick="runConfig(${c.id})" class="btn-confirm" title="Lancer cette recherche">
+                            <i class="fas fa-play"></i> Lancer
+                        </button>
+                        <button onclick="deleteConfig(${c.id})" class="btn-danger" title="Supprimer">
+                            <i class="fas fa-trash"></i>
+                        </button>
+                    </div>
+                </div>
+            `;
+        }).join('') : '<p class="empty-state">Aucune configuration sauvegardée.</p>';
+    } catch (e) {
+        console.error('Erreur chargement configs:', e);
+    }
+}
+
+async function runConfig(id) {
+    try {
+        const res = await api(`/search-configs/${id}/run`, 'POST');
+        showToast(res.message || 'Recherche lancée !', 'success');
+    } catch (e) {
+        alert(e.message);
+    }
+}
+
+async function deleteConfig(id) {
+    if (!confirm('Supprimer cette configuration ?')) return;
+    try {
+        await api(`/search-configs/${id}`, 'DELETE');
+        showToast('Configuration supprimée.', 'info');
+        loadConfigs();
+    } catch (e) {
+        alert(e.message);
+    }
+}
+
+document.getElementById('btn-save-config')?.addEventListener('click', async () => {
+    const name = document.getElementById('cfg-name')?.value?.trim();
+    const country = document.getElementById('cfg-country')?.value?.trim();
+    const title = document.getElementById('cfg-title')?.value?.trim();
+
+    if (!name || !country || !title) {
+        alert('Veuillez remplir le nom, le pays et le métier.');
+        return;
+    }
+
+    const config = {
+        name,
+        country,
+        city: document.getElementById('cfg-city')?.value?.trim() || '',
+        title,
+        keywords: document.getElementById('cfg-keywords')?.value?.trim() || '',
+        experience_level: document.getElementById('cfg-experience')?.value || '',
+        contract_type: document.getElementById('cfg-contract')?.value || '',
+        remote: document.getElementById('cfg-remote')?.value || ''
+    };
+
+    try {
+        await api('/search-configs', 'POST', config);
+        showToast(`Configuration "${name}" sauvegardée !`, 'success');
+        document.getElementById('cfg-name').value = '';
+        document.getElementById('cfg-title').value = '';
+        document.getElementById('cfg-keywords').value = '';
+        loadConfigs();
+    } catch (e) {
+        alert(e.message);
+    }
+});
+
 // Init
 loadJobs();
 
@@ -470,6 +572,10 @@ document.getElementById('btn-create-schedule')?.addEventListener('click', async 
     const country = document.getElementById('sched-country')?.value?.trim();
     const title = document.getElementById('sched-title')?.value?.trim();
     const keywords = document.getElementById('sched-keywords')?.value?.trim() || '';
+    const city = document.getElementById('sched-city')?.value?.trim() || '';
+    const experience_level = document.getElementById('sched-experience')?.value || '';
+    const contract_type = document.getElementById('sched-contract')?.value || '';
+    const remote = document.getElementById('sched-remote')?.value || '';
     const cron_expression = document.getElementById('sched-cron')?.value;
 
     if (!name || !country || !title) {
@@ -477,11 +583,12 @@ document.getElementById('btn-create-schedule')?.addEventListener('click', async 
         return;
     }
     try {
-        await api('/schedules', 'POST', { name, country, title, keywords, cron_expression });
+        await api('/schedules', 'POST', { name, country, title, keywords, city, experience_level, contract_type, remote, cron_expression });
         showToast(`Recherche planifi\u00e9e "${name}" cr\u00e9\u00e9e !`, 'success');
         document.getElementById('sched-name').value = '';
         document.getElementById('sched-title').value = '';
         document.getElementById('sched-keywords').value = '';
+        document.getElementById('sched-city').value = '';
         loadSchedules();
     } catch (e) {
         alert(e.message);

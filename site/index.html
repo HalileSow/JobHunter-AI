@@ -132,6 +132,16 @@
                             </select>
                         </div>
                     </div>
+                    <div class="form-row" style="display:flex;gap:12px;">
+                        <div class="form-group" style="flex:1;">
+                            <label>Salaire minimum souhaité</label>
+                            <input type="number" id="search-min-salary" min="0" step="1000" placeholder="Ex: 35000">
+                        </div>
+                        <div class="form-group" style="flex:1;">
+                            <label>Salaire maximum souhaité</label>
+                            <input type="number" id="search-max-salary" min="0" step="1000" placeholder="Ex: 60000">
+                        </div>
+                    </div>
                     <button id="btn-launch-search" class="btn-primary">
                         <i class="fas fa-rocket"></i> Lancer la recherche multi-providers
                     </button>
@@ -192,6 +202,16 @@
                                 <option value="hybrid">Hybride</option>
                                 <option value="on_site">Présentiel</option>
                             </select>
+                        </div>
+                    </div>
+                    <div class="form-row" style="display:flex;gap:12px;">
+                        <div class="form-group" style="flex:1;">
+                            <label>Salaire minimum</label>
+                            <input type="number" id="cfg-min-salary" min="0" step="1000" placeholder="Ex: 35000">
+                        </div>
+                        <div class="form-group" style="flex:1;">
+                            <label>Salaire maximum</label>
+                            <input type="number" id="cfg-max-salary" min="0" step="1000" placeholder="Ex: 60000">
                         </div>
                     </div>
                     <button id="btn-save-config" class="btn-primary">
@@ -262,6 +282,16 @@
                                 <option value="hybrid">Hybride</option>
                                 <option value="on_site">Présentiel</option>
                             </select>
+                        </div>
+                    </div>
+                    <div class="form-row" style="display:flex;gap:12px;">
+                        <div class="form-group" style="flex:1;">
+                            <label>Salaire minimum</label>
+                            <input type="number" id="sched-min-salary" min="0" step="1000" placeholder="Ex: 35000">
+                        </div>
+                        <div class="form-group" style="flex:1;">
+                            <label>Salaire maximum</label>
+                            <input type="number" id="sched-max-salary" min="0" step="1000" placeholder="Ex: 60000">
                         </div>
                         <div class="form-group" style="flex:1;">
                             <label>Fréquence (cron)</label>

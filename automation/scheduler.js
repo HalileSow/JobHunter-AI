@@ -1,12 +1,18 @@
-import { spawn } from 'node:child_process';
-import path from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { initDb } from './db.js';
 import { backupDatabase } from './backup_db.js';
+import { launchSearchRun } from './search_run_launcher.js';
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-const automationScript = path.join(__dirname, 'main.js');
+function parseProviderSelection(rawValue) {
+    if (Array.isArray(rawValue)) return rawValue;
+    if (typeof rawValue !== 'string' || !rawValue.trim()) return [];
+
+    try {
+        const parsed = JSON.parse(rawValue);
+        return Array.isArray(parsed) ? parsed : [];
+    } catch {
+        return [];
+    }
+}
 
 /**
  * Parse une expression cron simplifiée (5 champs : minute heure jour_mois mois jour_semaine).
@@ -84,20 +90,34 @@ async function tick() {
 
         console.log(`⏰ [Scheduler] Déclenchement planifié : "${schedule.name}" (${schedule.title} en ${schedule.country})`);
 
-        const advancedFilters = JSON.stringify({
+        const advancedFilters = {
             city: schedule.city || '',
             experienceLevel: schedule.experience_level || '',
             contractType: schedule.contract_type || '',
             remote: schedule.remote || '',
-            jobType: schedule.job_type || ''
-        });
+            jobType: schedule.job_type || '',
+            salary: schedule.salary || '',
+            minSalary: schedule.min_salary || '',
+            maxSalary: schedule.max_salary || ''
+        };
 
-        const child = spawn(process.execPath, [automationScript, schedule.country, schedule.title, schedule.keywords || '', schedule.lang || 'fr', advancedFilters], {
-            cwd: __dirname,
-            stdio: 'ignore',
-            detached: false
+        const [inserted] = await db('search_runs').insert({
+            country: schedule.country,
+            title: schedule.title,
+            keywords: schedule.keywords || '',
+            lang: schedule.lang || 'fr',
+            status: 'queued'
+        }).returning('id');
+        const runId = inserted?.id || inserted;
+        await launchSearchRun({
+            runId,
+            country: schedule.country,
+            title: schedule.title,
+            keywords: schedule.keywords || '',
+            lang: schedule.lang || 'fr',
+            advancedFilters,
+            selectedProviderIds: parseProviderSelection(schedule.providers_list)
         });
-        child.unref();
 
         const nextRun = computeNextRun(schedule.cron_expression);
 
@@ -107,15 +127,6 @@ async function tick() {
             total_runs: schedule.total_runs + 1
         });
 
-        // Enregistrer un search_run
-        await db('search_runs').insert({
-            country: schedule.country,
-            title: schedule.title,
-            keywords: schedule.keywords || '',
-            lang: schedule.lang || 'fr',
-            status: 'running',
-            started_at: db.fn.now()
-        });
     }
 }
 

@@ -21,6 +21,9 @@ export async function runSearch(country, jobTitle, keywords = '', lang = 'fr', s
         contractType: advancedFilters.contractType || '',
         remote: advancedFilters.remote || '',
         jobType: advancedFilters.jobType || '',
+        salary: advancedFilters.salary || '',
+        minSalary: advancedFilters.minSalary || '',
+        maxSalary: advancedFilters.maxSalary || '',
         lang,
         selectedProviderIds: selectedProviders
     });
@@ -42,14 +45,21 @@ export async function runSearch(country, jobTitle, keywords = '', lang = 'fr', s
 const [,, country, title, keywords, lang, advancedFiltersJson] = process.argv;
 if (country && title) {
     let advancedFilters = {};
+    let selectedProviders = [];
     if (advancedFiltersJson) {
         try {
-            advancedFilters = JSON.parse(advancedFiltersJson);
+            const parsed = JSON.parse(advancedFiltersJson);
+            if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+                advancedFilters = parsed;
+                if (Array.isArray(parsed.selectedProviderIds)) {
+                    selectedProviders = parsed.selectedProviderIds;
+                }
+            }
         } catch (e) {
             console.warn(`⚠️ Filtres avancés invalides (JSON), ignorés : ${e.message}`);
         }
     }
-    runSearch(country, title, keywords || "", lang || 'fr', [], advancedFilters).catch((error) => {
+    runSearch(country, title, keywords || "", lang || 'fr', selectedProviders, advancedFilters).catch((error) => {
         console.error(`❌ Échec du workflow : ${error.message}`);
         process.exitCode = 1;
     });

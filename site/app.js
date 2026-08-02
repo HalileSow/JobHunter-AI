@@ -280,7 +280,9 @@ document.getElementById('btn-launch-search').addEventListener('click', async () 
         contractType: document.getElementById('search-contract').value,
         remote: document.getElementById('search-remote').value,
         jobType: document.getElementById('search-jobtype').value,
-        lang: document.getElementById('search-lang').value
+        lang: document.getElementById('search-lang').value,
+        minSalary: document.getElementById('search-min-salary')?.value || '',
+        maxSalary: document.getElementById('search-max-salary')?.value || ''
     };
 
     if (!data.title) return alert('Veuillez saisir un titre de métier.');
@@ -410,7 +412,10 @@ async function loadConfigs() {
                 c.experience_level ? `<i class="fas fa-chart-bar"></i> ${escapeHtml(c.experience_level)}` : '',
                 c.contract_type ? `<i class="fas fa-file-contract"></i> ${escapeHtml(c.contract_type)}` : '',
                 c.remote ? `<i class="fas fa-wifi"></i> ${escapeHtml(c.remote)}` : '',
-                c.job_type ? `<i class="fas fa-briefcase"></i> ${escapeHtml(c.job_type)}` : ''
+                c.job_type ? `<i class="fas fa-briefcase"></i> ${escapeHtml(c.job_type)}` : '',
+                c.salary ? `<i class="fas fa-coins"></i> ${escapeHtml(c.salary)}` : '',
+                c.min_salary ? `<i class="fas fa-coins"></i> Min ${escapeHtml(c.min_salary)}` : '',
+                c.max_salary ? `<i class="fas fa-coins"></i> Max ${escapeHtml(c.max_salary)}` : ''
             ].filter(Boolean).join(' | ');
 
             return `
@@ -477,7 +482,9 @@ document.getElementById('btn-save-config')?.addEventListener('click', async () =
         keywords: document.getElementById('cfg-keywords')?.value?.trim() || '',
         experience_level: document.getElementById('cfg-experience')?.value || '',
         contract_type: document.getElementById('cfg-contract')?.value || '',
-        remote: document.getElementById('cfg-remote')?.value || ''
+        remote: document.getElementById('cfg-remote')?.value || '',
+        min_salary: document.getElementById('cfg-min-salary')?.value || '',
+        max_salary: document.getElementById('cfg-max-salary')?.value || ''
     };
 
     try {
@@ -512,10 +519,11 @@ async function loadSchedules() {
         if (!list) return;
 
         list.innerHTML = schedules.length ? schedules.map(s => {
-            const cronLabel = CRON_LABELS[s.cron_expression] || s.cron_expression;
-            const statusColor = s.enabled ? '#10b981' : '#6b7280';
-            const statusLabel = s.enabled ? 'Actif' : 'Suspendu';
-            const lastRun = s.last_run_at ? new Date(s.last_run_at).toLocaleString('fr-FR') : 'Jamais';
+                const cronLabel = CRON_LABELS[s.cron_expression] || s.cron_expression;
+                const statusColor = s.enabled ? '#10b981' : '#6b7280';
+                const statusLabel = s.enabled ? 'Actif' : 'Suspendu';
+                const lastRun = s.last_run_at ? new Date(s.last_run_at).toLocaleString('fr-FR') : 'Jamais';
+                const salaryLabel = [s.salary ? `Salaire ${s.salary}` : '', s.min_salary ? `Min ${s.min_salary}` : '', s.max_salary ? `Max ${s.max_salary}` : ''].filter(Boolean).join(' | ');
 
             return `
                 <div class="run-item" style="display:flex; justify-content:space-between; align-items:center; padding:14px; background: var(--bg-card); border-radius:10px; border-left: 4px solid ${statusColor}; margin-bottom: 10px;">
@@ -525,6 +533,7 @@ async function loadSchedules() {
                             <i class="fas fa-briefcase"></i> ${escapeHtml(s.title)} | <i class="fas fa-map-marker-alt"></i> ${escapeHtml(s.country)}
                             ${s.keywords ? `| <i class="fas fa-tags"></i> ${escapeHtml(s.keywords)}` : ''}
                         </div>
+                        ${salaryLabel ? `<div style="color: #fbbf24; font-size: 0.8rem; margin-top: 4px;"><i class="fas fa-coins"></i> ${escapeHtml(salaryLabel)}</div>` : ''}
                         <div style="color: #9ca3af; font-size: 0.8rem; margin-top: 4px;">
                             <i class="fas fa-clock"></i> ${escapeHtml(cronLabel)} | <i class="fas fa-history"></i> ${s.total_runs} ex\u00e9cution(s) | Derni\u00e8re : ${lastRun}
                         </div>
@@ -576,6 +585,8 @@ document.getElementById('btn-create-schedule')?.addEventListener('click', async 
     const experience_level = document.getElementById('sched-experience')?.value || '';
     const contract_type = document.getElementById('sched-contract')?.value || '';
     const remote = document.getElementById('sched-remote')?.value || '';
+    const min_salary = document.getElementById('sched-min-salary')?.value || '';
+    const max_salary = document.getElementById('sched-max-salary')?.value || '';
     const cron_expression = document.getElementById('sched-cron')?.value;
 
     if (!name || !country || !title) {
@@ -583,7 +594,7 @@ document.getElementById('btn-create-schedule')?.addEventListener('click', async 
         return;
     }
     try {
-        await api('/schedules', 'POST', { name, country, title, keywords, city, experience_level, contract_type, remote, cron_expression });
+        await api('/schedules', 'POST', { name, country, title, keywords, city, experience_level, contract_type, remote, min_salary, max_salary, cron_expression });
         showToast(`Recherche planifi\u00e9e "${name}" cr\u00e9\u00e9e !`, 'success');
         document.getElementById('sched-name').value = '';
         document.getElementById('sched-title').value = '';

@@ -2,7 +2,6 @@ import express from 'express';
 import cors from 'cors';
 import jwt from 'jsonwebtoken';
 import bcrypt from 'bcrypt';
-import { spawn } from 'node:child_process';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { initDb } from '../automation/db.js';
@@ -10,11 +9,10 @@ import { submitJob, confirmUserSubmission } from '../automation/submission_engin
 import { defaultRegistry } from '../automation/providers/registry.js';
 import { backupDatabase } from '../automation/backup_db.js';
 import { startScheduler } from '../automation/scheduler.js';
+import { launchSearchRun } from '../automation/search_run_launcher.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const JWT_SECRET = process.env.JWT_SECRET || 'dev-secret-key';
-const automationDirectory = path.join(__dirname, '..', 'automation');
-const automationScript = path.join(automationDirectory, 'main.js');
 const generatedLettersDirectory = path.join(__dirname, '..', 'cover_letters', 'generated');
 const port = Number(process.env.PORT || 4173);
 const allowedLanguages = new Set(['fr', 'en', 'de']);
@@ -28,6 +26,18 @@ function requiredText(value, label) {
 
 function optionalText(value) {
     return typeof value === 'string' ? value.trim() : '';
+}
+
+function parseProviderSelection(rawValue) {
+    if (Array.isArray(rawValue)) return rawValue;
+    if (typeof rawValue !== 'string' || !rawValue.trim()) return [];
+
+    try {
+        const parsed = JSON.parse(rawValue);
+        return Array.isArray(parsed) ? parsed : [];
+    } catch {
+        return [];
+    }
 }
 
 async function withDb(operation) {
@@ -175,10 +185,14 @@ function createApp() {
             const contract_type = optionalText(req.body?.contract_type);
             const remote = optionalText(req.body?.remote);
             const job_type = optionalText(req.body?.job_type);
+            const salary = optionalText(req.body?.salary);
+            const min_salary = optionalText(req.body?.min_salary);
+            const max_salary = optionalText(req.body?.max_salary);
+            const providers_list = JSON.stringify(parseProviderSelection(req.body?.providers ?? req.body?.selectedProviderIds));
 
             const [id] = await withDb((db) => db('scheduled_searches').insert({
                 name, country, title, keywords, lang, cron_expression,
-                city, experience_level, contract_type, remote, job_type,
+                city, experience_level, contract_type, remote, job_type, salary, min_salary, max_salary, providers_list,
                 enabled: true
             }));
             const schedule = await withDb((db) => db('scheduled_searches').where({ id }).first());
@@ -234,8 +248,11 @@ function createApp() {
                 contract_type: optionalText(req.body?.contract_type),
                 remote: optionalText(req.body?.remote),
                 job_type: optionalText(req.body?.job_type),
+                salary: optionalText(req.body?.salary),
+                min_salary: optionalText(req.body?.min_salary),
+                max_salary: optionalText(req.body?.max_salary),
                 lang: allowedLanguages.has(req.body?.lang) ? req.body.lang : 'fr',
-                providers_list: Array.isArray(req.body?.providers) ? JSON.stringify(req.body.providers) : '[]',
+                providers_list: JSON.stringify(parseProviderSelection(req.body?.providers ?? req.body?.selectedProviderIds)),
                 enabled: true
             };
             const [id] = await withDb((db) => db('search_configs').insert(config));
@@ -258,10 +275,14 @@ function createApp() {
                 contract_type: optionalText(req.body?.contract_type),
                 remote: optionalText(req.body?.remote),
                 job_type: optionalText(req.body?.job_type),
+                salary: optionalText(req.body?.salary),
+                min_salary: optionalText(req.body?.min_salary),
+                max_salary: optionalText(req.body?.max_salary),
                 updated_at: new Date().toISOString()
             };
-            if (Array.isArray(req.body?.providers)) {
-                updates.providers_list = JSON.stringify(req.body.providers);
+            const providers = parseProviderSelection(req.body?.providers ?? req.body?.selectedProviderIds);
+            if (providers.length > 0) {
+                updates.providers_list = JSON.stringify(providers);
             }
             const changed = await withDb((db) => db('search_configs').where({ id: req.params.id }).update(updates));
             if (!changed) return res.status(404).json({ error: 'Configuration introuvable.' });
@@ -287,13 +308,17 @@ function createApp() {
             const config = await withDb((db) => db('search_configs').where({ id: req.params.id }).first());
             if (!config) return res.status(404).json({ error: 'Configuration introuvable.' });
 
-            const advancedFilters = JSON.stringify({
+            const advancedFilters = {
                 city: config.city || '',
                 experienceLevel: config.experience_level || '',
                 contractType: config.contract_type || '',
                 remote: config.remote || '',
-                jobType: config.job_type || ''
-            });
+                jobType: config.job_type || '',
+                salary: config.salary || '',
+                minSalary: config.min_salary || '',
+                maxSalary: config.max_salary || '',
+                selectedProviderIds: parseProviderSelection(config.providers_list)
+            };
 
             const run = await withDb(async (db) => {
                 const [id] = await db('search_runs').insert({
@@ -307,26 +332,22 @@ function createApp() {
             });
             broadcast('search_run_updated', { id: run.id, status: 'queued', title: config.title, country: config.country });
 
-            const child = spawn(process.execPath, [automationScript, config.country, config.title, config.keywords || '', config.lang || 'fr', advancedFilters], {
-                cwd: automationDirectory,
-                stdio: 'ignore',
-                detached: false
-            });
-            child.unref();
-            child.once('spawn', () => {
-                withDb((db) => db('search_runs').where({ id: run.id }).update({ status: 'running', started_at: db.fn.now() })).catch(console.error);
-                broadcast('search_run_updated', { id: run.id, status: 'running' });
-            });
-            child.once('error', (error) => {
-                withDb((db) => db('search_runs').where({ id: run.id }).update({ status: 'failed', error: error.message, finished_at: db.fn.now() })).catch(console.error);
-                broadcast('search_run_updated', { id: run.id, status: 'failed', error: error.message });
-            });
-            child.once('close', (code) => {
-                const status = code === 0 ? 'completed' : 'failed';
-                const error = code === 0 ? null : `Code de sortie ${code}`;
-                withDb((db) => db('search_runs').where({ id: run.id }).update({ status, error, finished_at: db.fn.now() })).catch(console.error);
-                broadcast('search_run_updated', { id: run.id, status, error });
-                broadcast('jobs_refreshed', {});
+            await launchSearchRun({
+                runId: run.id,
+                country: config.country,
+                title: config.title,
+                keywords: config.keywords || '',
+                lang: config.lang || 'fr',
+                advancedFilters,
+                selectedProviderIds: parseProviderSelection(config.providers_list),
+                onStatusChange: (updates) => {
+                    if (updates.status) {
+                        broadcast('search_run_updated', { id: run.id, status: updates.status, error: updates.error || null });
+                    }
+                    if (updates.status === 'completed' || updates.status === 'failed') {
+                        broadcast('jobs_refreshed', {});
+                    }
+                }
             });
 
             res.status(202).json({ success: true, runId: run.id, message: `Recherche "${config.name}" lancée.` });
@@ -367,7 +388,7 @@ function createApp() {
     // Endpoints Jobs
     app.get('/api/jobs', async (req, res) => {
         try {
-            const { country, city, contract_type, experience_level, remote, status } = req.query;
+            const { country, city, contract_type, experience_level, remote, status, salary, min_salary, max_salary } = req.query;
             let query = withDb((db) => {
                 let q = db('jobs').select('*');
                 if (country) q = q.where('country', country);
@@ -376,6 +397,9 @@ function createApp() {
                 if (experience_level) q = q.where('experience_level', experience_level);
                 if (remote) q = q.where('remote', remote);
                 if (status) q = q.where('status', status);
+                if (salary) q = q.where('salary', 'like', `%${salary}%`);
+                if (min_salary) q = q.where('salary', 'like', `%${min_salary}%`);
+                if (max_salary) q = q.where('salary', 'like', `%${max_salary}%`);
                 return q.orderBy('score', 'desc').orderBy('created_at', 'desc');
             });
             const jobs = await query;
@@ -545,6 +569,10 @@ function createApp() {
             const contractType = optionalText(req.body?.contractType);
             const remote = optionalText(req.body?.remote);
             const jobType = optionalText(req.body?.jobType);
+            const salary = optionalText(req.body?.salary);
+            const minSalary = optionalText(req.body?.minSalary);
+            const maxSalary = optionalText(req.body?.maxSalary);
+            const selectedProviderIds = parseProviderSelection(req.body?.selectedProviderIds);
 
             const run = await withDb(async (db) => {
                 const [id] = await db('search_runs').insert({ country, title, keywords, lang, status: 'queued' });
@@ -552,27 +580,22 @@ function createApp() {
             });
             broadcast('search_run_updated', { id: run.id, status: 'queued', title, country });
 
-            const advancedFilters = JSON.stringify({ city, experienceLevel, contractType, remote, jobType });
-            const child = spawn(process.execPath, [automationScript, country, title, keywords, lang, advancedFilters], {
-                cwd: automationDirectory,
-                stdio: 'ignore',
-                detached: false
-            });
-            child.unref();
-            child.once('spawn', () => {
-                withDb((db) => db('search_runs').where({ id: run.id }).update({ status: 'running', started_at: db.fn.now() })).catch(console.error);
-                broadcast('search_run_updated', { id: run.id, status: 'running' });
-            });
-            child.once('error', (error) => {
-                withDb((db) => db('search_runs').where({ id: run.id }).update({ status: 'failed', error: error.message, finished_at: db.fn.now() })).catch(console.error);
-                broadcast('search_run_updated', { id: run.id, status: 'failed', error: error.message });
-            });
-            child.once('close', (code) => {
-                const status = code === 0 ? 'completed' : 'failed';
-                const error = code === 0 ? null : `Le workflow s’est arrêté avec le code ${code}.`;
-                withDb((db) => db('search_runs').where({ id: run.id }).update({ status, error, finished_at: db.fn.now() })).catch(console.error);
-                broadcast('search_run_updated', { id: run.id, status, error });
-                broadcast('jobs_refreshed', {});
+            await launchSearchRun({
+                runId: run.id,
+                country,
+                title,
+                keywords,
+                lang,
+                advancedFilters: { city, experienceLevel, contractType, remote, jobType, salary, minSalary, maxSalary },
+                selectedProviderIds,
+                onStatusChange: (updates) => {
+                    if (updates.status) {
+                        broadcast('search_run_updated', { id: run.id, status: updates.status, error: updates.error || null });
+                    }
+                    if (updates.status === 'completed' || updates.status === 'failed') {
+                        broadcast('jobs_refreshed', {});
+                    }
+                }
             });
             res.status(202).json({ success: true, runId: run.id, message: 'Recherche multi-providers lancée.' });
         } catch (error) {

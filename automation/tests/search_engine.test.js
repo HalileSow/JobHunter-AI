@@ -3,6 +3,8 @@ import assert from 'node:assert/strict';
 import {
     normalizeText,
     normalizeUrl,
+    parseSalaryRange,
+    matchesSalaryFilter,
     computeDedupHash,
     deduplicateJobs,
     applySearchFilters
@@ -53,6 +55,20 @@ describe('computeDedupHash', () => {
     });
 });
 
+describe('parseSalaryRange', () => {
+    it('extrait une fourchette numérique depuis un texte salarial', () => {
+        assert.deepEqual(parseSalaryRange('45k - 55k'), { min: 45000, max: 55000 });
+        assert.deepEqual(parseSalaryRange('60 000 - 80 000 €'), { min: 60000, max: 80000 });
+    });
+});
+
+describe('matchesSalaryFilter', () => {
+    it('valide une offre quand le salaire correspond au minimum demandé', () => {
+        assert.equal(matchesSalaryFilter('45k - 55k', { salary: '50000' }), true);
+        assert.equal(matchesSalaryFilter('45k - 55k', { salary: '60000' }), false);
+    });
+});
+
 describe('deduplicateJobs', () => {
     it('supprime les doublons par hash et fusionne les sources', () => {
         const jobs = [
@@ -85,11 +101,11 @@ describe('deduplicateJobs', () => {
 
 describe('applySearchFilters', () => {
     const sampleJobs = [
-        { title: 'Junior Developer', company: 'Startup', location: 'Paris', city: 'Paris', contract_type: 'CDI', experience_level: 'junior', remote: 'on_site', job_type: 'full_time' },
-        { title: 'Senior Engineer Remote', company: 'BigCorp', location: 'Remote', city: '', contract_type: 'CDI', experience_level: 'senior', remote: 'full_remote', job_type: 'full_time' },
-        { title: 'Stage Data', company: 'DataInc', location: 'Berlin', city: 'Berlin', contract_type: 'Stage', experience_level: 'junior', remote: 'hybrid', job_type: 'internship' },
-        { title: 'Dev CDD', company: 'TempCo', location: 'Lyon', city: 'Lyon', contract_type: 'CDD', experience_level: 'mid', remote: 'on_site', job_type: 'full_time' },
-        { title: 'Freelance Consultant', company: 'FreeCo', location: 'Paris', city: 'Paris', contract_type: 'Freelance', experience_level: 'senior', remote: 'full_remote', job_type: 'part_time' }
+        { title: 'Junior Developer', company: 'Startup', location: 'Paris', city: 'Paris', contract_type: 'CDI', experience_level: 'junior', remote: 'on_site', job_type: 'full_time', salary: '35k - 40k' },
+        { title: 'Senior Engineer Remote', company: 'BigCorp', location: 'Remote', city: '', contract_type: 'CDI', experience_level: 'senior', remote: 'full_remote', job_type: 'full_time', salary: '70k - 90k' },
+        { title: 'Stage Data', company: 'DataInc', location: 'Berlin', city: 'Berlin', contract_type: 'Stage', experience_level: 'junior', remote: 'hybrid', job_type: 'internship', salary: '1200' },
+        { title: 'Dev CDD', company: 'TempCo', location: 'Lyon', city: 'Lyon', contract_type: 'CDD', experience_level: 'mid', remote: 'on_site', job_type: 'full_time', salary: '45k' },
+        { title: 'Freelance Consultant', company: 'FreeCo', location: 'Paris', city: 'Paris', contract_type: 'Freelance', experience_level: 'senior', remote: 'full_remote', job_type: 'part_time', salary: '50000' }
     ];
 
     it('ne filtre rien si tous les critères sont vides', () => {
@@ -143,5 +159,11 @@ describe('applySearchFilters', () => {
     it('retourne vide si aucun résultat ne correspond', () => {
         const result = applySearchFilters(sampleJobs, { city: 'Tokyo' });
         assert.equal(result.length, 0);
+    });
+
+    it('filtre par salaire minimum', () => {
+        const result = applySearchFilters(sampleJobs, { salary: '50000' });
+        assert.ok(result.every((job) => matchesSalaryFilter(job.salary, { salary: '50000' })));
+        assert.equal(result.some((job) => job.title === 'Stage Data'), false);
     });
 });

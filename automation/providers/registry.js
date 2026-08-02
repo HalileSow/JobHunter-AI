@@ -5,6 +5,7 @@ import { FranceTravailProvider } from './impl/france_travail.js';
 import { RemotiveProvider } from './impl/remotive.js';
 import { AtsProvider } from './impl/ats_greenhouse_lever.js';
 import { CareerPagesProvider } from './impl/career_pages.js';
+import { GenericCustomProvider } from './impl/generic_custom.js';
 
 export class ProviderRegistry {
     constructor() {
@@ -20,6 +21,7 @@ export class ProviderRegistry {
         this.register(new RemotiveProvider());
         this.register(new AtsProvider());
         this.register(new CareerPagesProvider());
+        this.register(new GenericCustomProvider());
     }
 
     /**

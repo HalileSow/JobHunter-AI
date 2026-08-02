@@ -42,6 +42,65 @@ export function normalizeUrl(rawUrl) {
 }
 
 /**
+ * Normalise une valeur salariale textuelle en intervalle numérique.
+ */
+export function parseSalaryRange(value) {
+    if (value === undefined || value === null) return null;
+
+    if (typeof value === 'number' && Number.isFinite(value)) {
+        return { min: value, max: value };
+    }
+
+    const text = String(value)
+        .toLowerCase()
+        .replace(/(\d)\s+(?=\d)/g, '$1')
+        .replace(/\s+/g, ' ')
+        .trim();
+    if (!text || ['n/a', 'na', 'non spécifié', 'non specifie', 'selon profil', 'selon experience', 'non communiqué', 'non communique'].includes(text)) {
+        return null;
+    }
+
+    const extractNumber = (raw) => {
+        const compact = raw.replace(/[^0-9.,kmb]/g, '').replace(',', '.');
+        const multiplier = compact.includes('m') ? 1_000_000 : compact.includes('k') ? 1_000 : compact.includes('b') ? 1_000_000_000 : 1;
+        const numeric = parseFloat(compact.replace(/[kmb]/g, ''));
+        return Number.isFinite(numeric) ? Math.round(numeric * multiplier) : null;
+    };
+
+    const matches = text.match(/(\d[\d.,]*\s*[kmb]?)/g);
+    if (!matches || matches.length === 0) return null;
+
+    const values = matches.map(extractNumber).filter((v) => Number.isFinite(v));
+    if (values.length === 0) return null;
+
+    if (values.length === 1) {
+        return { min: values[0], max: values[0] };
+    }
+
+    return { min: Math.min(...values), max: Math.max(...values) };
+}
+
+/**
+ * Vérifie si un salaire d'offre correspond au filtre demandé.
+ */
+export function matchesSalaryFilter(jobSalary, { salary, minSalary, maxSalary } = {}) {
+    const desiredSalary = Number(salary);
+    const desiredMin = Number(minSalary);
+    const desiredMax = Number(maxSalary);
+    const filterMin = Number.isFinite(desiredMin) && desiredMin > 0 ? desiredMin : (Number.isFinite(desiredSalary) && desiredSalary > 0 ? desiredSalary : null);
+    const filterMax = Number.isFinite(desiredMax) && desiredMax > 0 ? desiredMax : null;
+
+    if (filterMin === null && filterMax === null) return true;
+
+    const range = parseSalaryRange(jobSalary);
+    if (!range) return false;
+
+    if (filterMin !== null && range.max < filterMin) return false;
+    if (filterMax !== null && range.min > filterMax) return false;
+    return true;
+}
+
+/**
  * Calcule une empreinte numérique (hash) unique pour détecter les doublons.
  */
 export function computeDedupHash(job) {
@@ -100,7 +159,7 @@ export function deduplicateJobs(jobs) {
  * Filtre les offres selon les critères de recherche avancés.
  * Les critères vides/undefined sont ignorés (pas de filtre).
  */
-export function applySearchFilters(jobs, { city, experienceLevel, contractType, remote, jobType }) {
+export function applySearchFilters(jobs, { city, experienceLevel, contractType, remote, jobType, salary, minSalary, maxSalary }) {
     return jobs.filter(job => {
         if (city) {
             const jobCity = (job.city || job.location || '').toLowerCase();
@@ -112,7 +171,7 @@ export function applySearchFilters(jobs, { city, experienceLevel, contractType, 
             const searchContract = contractType.toLowerCase();
             const contractAliases = {
                 'cdi': ['cdi', 'permanent', 'plein temps', 'full-time'],
-                'cdd': ['cdd', 'cdi', 'contract', 'temporaire'],
+                'cdd': ['cdd', 'contract', 'temporaire', 'fixed-term', 'fixed term'],
                 'stage': ['stage', 'internship', 'stagiaire'],
                 'alternance': ['alternance', 'apprenti', 'apprentissage', 'work-study'],
                 'freelance': ['freelance', 'indépendant', 'contractor']
@@ -168,6 +227,7 @@ export function applySearchFilters(jobs, { city, experienceLevel, contractType, 
             const allowed = typeAliases[jobType] || [jobType];
             if (!allowed.some(alias => jobTypeStr.includes(alias))) return false;
         }
+        if (!matchesSalaryFilter(job.salary, { salary, minSalary, maxSalary })) return false;
         return true;
     });
 }
@@ -175,7 +235,7 @@ export function applySearchFilters(jobs, { city, experienceLevel, contractType, 
 /**
  * Exécute la recherche multi-providers en parallèle et retourne la liste dédoublonnée.
  */
-export async function executeMultiProviderSearch({ country, jobTitle, keywords = '', city = '', experienceLevel = '', contractType = '', remote = '', jobType = '', selectedProviderIds = [], limit = 30 }) {
+export async function executeMultiProviderSearch({ country, jobTitle, keywords = '', city = '', experienceLevel = '', contractType = '', remote = '', jobType = '', salary = '', minSalary = '', maxSalary = '', selectedProviderIds = [], limit = 30 }) {
     let providersToUse = [];
 
     if (selectedProviderIds && selectedProviderIds.length > 0) {
@@ -192,11 +252,11 @@ export async function executeMultiProviderSearch({ country, jobTitle, keywords =
     }
 
     console.log(`🌐 Recherche en parallèle sur ${providersToUse.length} provider(s) : ${providersToUse.map(p => p.name).join(', ')}...`);
-    console.log(`📋 Filtres : pays=${country}, ville=${city || '—'}, expérience=${experienceLevel || '—'}, contrat=${contractType || '—'}, remote=${remote || '—'}, type=${jobType || '—'}`);
+    console.log(`📋 Filtres : pays=${country}, ville=${city || '—'}, expérience=${experienceLevel || '—'}, contrat=${contractType || '—'}, remote=${remote || '—'}, type=${jobType || '—'}, salaire=${salary || minSalary || maxSalary || '—'}`);
 
     const timeoutMs = 30000;
 
-    const searchParams = { country, jobTitle, keywords, city, experienceLevel, contractType, remote, jobType, limit };
+    const searchParams = { country, jobTitle, keywords, city, experienceLevel, contractType, remote, jobType, salary, minSalary, maxSalary, limit };
 
     const providerPromises = providersToUse.map(provider => {
         return Promise.race([
@@ -216,7 +276,7 @@ export async function executeMultiProviderSearch({ country, jobTitle, keywords =
     const uniqueJobs = deduplicateJobs(rawJobs);
     console.log(`✨ Après dédoublonnage intelligent : ${uniqueJobs.length} offre(s) uniques.`);
 
-    const filteredJobs = applySearchFilters(uniqueJobs, { city, experienceLevel, contractType, remote, jobType });
+    const filteredJobs = applySearchFilters(uniqueJobs, { city, experienceLevel, contractType, remote, jobType, salary, minSalary, maxSalary });
     if (filteredJobs.length !== uniqueJobs.length) {
         console.log(`🔍 Après filtrage avancé : ${filteredJobs.length} offre(s) correspondent aux critères.`);
     }
@@ -228,11 +288,11 @@ export async function executeMultiProviderSearch({ country, jobTitle, keywords =
  * Moteur complet : Recherche multi-providers, dédoublonnage, sélection du CV, scoring IA,
  * génération de la lettre de motivation PDF, et enregistrement en base de données.
  */
-export async function runFullJobHunterSearch({ country, jobTitle, keywords = '', city = '', experienceLevel = '', contractType = '', remote = '', jobType = '', lang = 'fr', selectedProviderIds = [] }) {
+export async function runFullJobHunterSearch({ country, jobTitle, keywords = '', city = '', experienceLevel = '', contractType = '', remote = '', jobType = '', salary = '', minSalary = '', maxSalary = '', lang = 'fr', selectedProviderIds = [] }) {
     const db = await initDb();
 
     // 1. Démarrer la recherche multi-providers avec filtres avancés
-    const uniqueJobs = await executeMultiProviderSearch({ country, jobTitle, keywords, city, experienceLevel, contractType, remote, jobType, selectedProviderIds });
+    const uniqueJobs = await executeMultiProviderSearch({ country, jobTitle, keywords, city, experienceLevel, contractType, remote, jobType, salary, minSalary, maxSalary, selectedProviderIds });
 
     if (uniqueJobs.length === 0) {
         console.log(`ℹ️ Aucune nouvelle offre trouvée pour ${jobTitle} en ${country}.`);
@@ -304,6 +364,9 @@ export async function runFullJobHunterSearch({ country, jobTitle, keywords = '',
                 search_experience_level: experienceLevel || '',
                 search_remote: remote || '',
                 search_contract_type: contractType || '',
+                search_salary: salary || '',
+                search_min_salary: minSalary || '',
+                search_max_salary: maxSalary || '',
                 date_posted: job.date_posted || new Date().toISOString().split('T')[0],
                 selected_cv_id: selectedCv.id,
                 pdf_path: pdfPath,

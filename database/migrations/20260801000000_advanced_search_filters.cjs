@@ -22,6 +22,10 @@ exports.up = function (knex) {
             table.string('remote').defaultTo('');
             table.string('contract_type').defaultTo('');
             table.string('job_type').defaultTo('');
+            table.string('salary').defaultTo('');
+            table.string('min_salary').defaultTo('');
+            table.string('max_salary').defaultTo('');
+            table.text('providers_list').defaultTo('[]');
         })
         .createTable('search_configs', (table) => {
             table.increments('id').primary();
@@ -34,6 +38,9 @@ exports.up = function (knex) {
             table.string('contract_type').defaultTo('');
             table.string('remote').defaultTo('');
             table.string('job_type').defaultTo('');
+            table.string('salary').defaultTo('');
+            table.string('min_salary').defaultTo('');
+            table.string('max_salary').defaultTo('');
             table.string('lang').defaultTo('fr');
             table.text('providers_list');
             table.boolean('enabled').defaultTo(true);
@@ -51,6 +58,10 @@ exports.down = function (knex) {
             table.dropColumn('remote');
             table.dropColumn('contract_type');
             table.dropColumn('job_type');
+            table.dropColumn('salary');
+            table.dropColumn('min_salary');
+            table.dropColumn('max_salary');
+            table.dropColumn('providers_list');
         })
         .table('jobs', (table) => {
             table.dropColumn('city');

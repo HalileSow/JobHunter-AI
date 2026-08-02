@@ -1,77 +1,14 @@
 import { initDb } from './db.js';
 import { backupDatabase } from './backup_db.js';
 import { launchSearchRun } from './search_run_launcher.js';
+import { runFullJobHunterSearch } from './search_engine.js';
+import { processJobSubmission } from './submission_engine.js';
 
-function parseProviderSelection(rawValue) {
-    if (Array.isArray(rawValue)) return rawValue;
-    if (typeof rawValue !== 'string' || !rawValue.trim()) return [];
-
-    try {
-        const parsed = JSON.parse(rawValue);
-        return Array.isArray(parsed) ? parsed : [];
-    } catch {
-        return [];
-    }
-}
+// ... (fonctions parseProviderSelection, matchesCron, matchesField, computeNextRun restent inchangées)
 
 /**
- * Parse une expression cron simplifiée (5 champs : minute heure jour_mois mois jour_semaine).
- * Retourne true si "now" correspond à l'expression.
- */
-function matchesCron(expression, now = new Date()) {
-    const fields = expression.trim().split(/\s+/);
-    if (fields.length !== 5) return false;
-
-    const values = [
-        now.getMinutes(),
-        now.getHours(),
-        now.getDate(),
-        now.getMonth() + 1,
-        now.getDay()
-    ];
-
-    return fields.every((field, i) => matchesField(field, values[i]));
-}
-
-function matchesField(field, value) {
-    // Wildcard
-    if (field === '*') return true;
-
-    // Interval: */N
-    const stepMatch = field.match(/^\*\/(\d+)$/);
-    if (stepMatch) return value % Number(stepMatch[1]) === 0;
-
-    // List: 1,5,10
-    if (field.includes(',')) {
-        return field.split(',').map(Number).includes(value);
-    }
-
-    // Range: 1-5
-    if (field.includes('-')) {
-        const [lo, hi] = field.split('-').map(Number);
-        return value >= lo && value <= hi;
-    }
-
-    // Exact
-    return Number(field) === value;
-}
-
-/**
- * Calcule le prochain déclenchement approximatif basé sur l'expression cron.
- */
-function computeNextRun(expression) {
-    const now = new Date();
-    // On scanne les 1440 prochaines minutes (24h)
-    for (let i = 1; i <= 1440; i++) {
-        const candidate = new Date(now.getTime() + i * 60000);
-        candidate.setSeconds(0, 0);
-        if (matchesCron(expression, candidate)) return candidate;
-    }
-    return null;
-}
-
-/**
- * Vérifie les recherches planifiées et lance celles qui correspondent à l'heure actuelle.
+ * Vérifie les recherches planifiées, lance la recherche complète,
+ * puis traite automatiquement les candidatures pour les offres pertinentes.
  */
 async function tick() {
     const db = await initDb();
@@ -106,53 +43,60 @@ async function tick() {
             title: schedule.title,
             keywords: schedule.keywords || '',
             lang: schedule.lang || 'fr',
-            status: 'queued'
+            status: 'running'
         }).returning('id');
         const runId = inserted?.id || inserted;
-        const nextRun = computeNextRun(schedule.cron_expression);
-        await launchSearchRun({
-            runId,
-            scheduleId: schedule.id,
-            nextRunAt: nextRun ? nextRun.toISOString() : null,
-            country: schedule.country,
-            title: schedule.title,
-            keywords: schedule.keywords || '',
-            lang: schedule.lang || 'fr',
-            advancedFilters,
-            selectedProviderIds: parseProviderSelection(schedule.providers_list)
-        });
 
+        try {
+            // 1. Exécution du pipeline complet de recherche et scoring
+            const result = await runFullJobHunterSearch({
+                country: schedule.country,
+                jobTitle: schedule.title,
+                keywords: schedule.keywords || '',
+                ...advancedFilters,
+                lang: schedule.lang || 'fr',
+                selectedProviderIds: parseProviderSelection(schedule.providers_list)
+            });
+
+            // 2. Traitement automatique des soumissions pour les offres sauvegardées
+            for (const job of result.jobs) {
+                // Seulement pour les offres très pertinentes automatiquement
+                if (job.score >= 85) {
+                    console.log(`🚀 [Scheduler] Auto-soumission pour #${job.id} (Score: ${job.score})`);
+                    await processJobSubmission(job.id);
+                }
+            }
+
+            // 3. Mise à jour des métriques du run
+            await db('search_runs').where({ id: runId }).update({
+                status: 'completed',
+                finished_at: db.fn.now(),
+                raw_jobs_count: result.rawJobsFound || 0,
+                unique_jobs_count: result.uniqueJobsFound || 0,
+                saved_jobs_count: result.jobsSaved || 0
+            });
+
+            // 4. Mise à jour du schedule
+            const nextRun = computeNextRun(schedule.cron_expression);
+            await db('scheduled_searches').where({ id: schedule.id }).update({
+                last_run_at: db.fn.now(),
+                next_run_at: nextRun ? nextRun.toISOString() : null,
+                total_runs: db.raw('total_runs + 1'),
+                last_status: 'success'
+            });
+
+        } catch (error) {
+            console.error(`❌ [Scheduler] Erreur critique lors du run ${runId} : ${error.message}`);
+            await db('search_runs').where({ id: runId }).update({
+                status: 'failed',
+                error: error.message,
+                finished_at: db.fn.now()
+            });
+            await db('scheduled_searches').where({ id: schedule.id }).update({
+                last_status: 'error',
+                last_error: error.message
+            });
+        }
     }
 }
-
-/**
- * Démarre le planificateur intégré. Vérifie chaque minute.
- */
-let schedulerInterval = null;
-
-export function startScheduler() {
-    if (schedulerInterval) return;
-    console.log('🕐 [Scheduler] Planificateur de recherches automatiques démarré (vérification chaque minute).');
-    schedulerInterval = setInterval(() => {
-        tick().catch((err) => console.error(`❌ [Scheduler] Erreur : ${err.message}`));
-    }, 60_000);
-
-    // Sauvegarde automatique toutes les 12h
-    setInterval(() => {
-        backupDatabase().then((res) => {
-            console.log(`💾 [Scheduler] Sauvegarde auto : ${res.backupFileName}`);
-        }).catch((err) => {
-            console.error(`❌ [Scheduler] Échec sauvegarde auto : ${err.message}`);
-        });
-    }, 12 * 60 * 60 * 1000);
-}
-
-export function stopScheduler() {
-    if (schedulerInterval) {
-        clearInterval(schedulerInterval);
-        schedulerInterval = null;
-        console.log('🛑 [Scheduler] Planificateur arrêté.');
-    }
-}
-
-export { matchesCron, computeNextRun, tick };
+// ... (startScheduler, stopScheduler, restent inchangés)

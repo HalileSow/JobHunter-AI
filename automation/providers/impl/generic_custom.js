@@ -3,6 +3,7 @@ import fs from 'fs/promises';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { browserScrape } from '../../browser_scraper.js';
+import { automateApplication } from '../../application_automation.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -93,6 +94,17 @@ export class GenericCustomProvider extends BaseProvider {
     }
 
     supportsAutoApply() {
-        return false;
+        return true;
+    }
+
+    async submitApplication(job, candidateProfile, cvPath, letterText) {
+        return await automateApplication({
+            job,
+            profile: candidateProfile,
+            tailoredCvPath: cvPath,
+            letterPath: job?.pdf_path || null,
+            letterText: letterText || job?.letter || '',
+            providerName: this.name
+        });
     }
 }

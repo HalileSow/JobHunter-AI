@@ -1,5 +1,6 @@
 import { BaseProvider } from '../base_provider.js';
 import axios from 'axios';
+import { automateApplication } from '../../application_automation.js';
 
 export class AtsProvider extends BaseProvider {
     constructor() {
@@ -68,7 +69,23 @@ export class AtsProvider extends BaseProvider {
     }
 
     supportsAutoApply(job) {
-        // Lever and Greenhouse have clean public API/Form submissions that can be automated or pre-filled.
-        return true;
+        return Boolean(job?.link);
+    }
+
+    async submitApplication(job, candidateProfile, cvPath, letterText) {
+        const docs = {
+            tailoredCvPath: cvPath,
+            letterPath: job?.pdf_path || null,
+            letterText: letterText || job?.letter || ''
+        };
+
+        return await automateApplication({
+            job,
+            profile: candidateProfile,
+            tailoredCvPath: docs.tailoredCvPath,
+            letterPath: docs.letterPath,
+            letterText: docs.letterText,
+            providerName: this.name
+        });
     }
 }

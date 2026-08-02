@@ -1,6 +1,46 @@
 import { initDb } from './db.js';
 import { defaultRegistry } from './providers/registry.js';
-import fs from 'fs/promises';
+import { getActiveCvPath, getCvById } from './cv_manager.js';
+import { buildApplicationDocuments } from './application_automation.js';
+import { recordApplicationAttempt } from './application_attempts.js';
+
+function resolveProvider(providerId) {
+    return defaultRegistry.get(providerId)
+        || defaultRegistry.get('generic_custom')
+        || defaultRegistry.getAll().find((provider) => provider.enabled)
+        || null;
+}
+
+function normalizeJobStatus(submitResult = {}, fallback = 'Échec') {
+    if (submitResult.status === 'réussie' || submitResult.success === true) return 'Soumis';
+    if (submitResult.status === 'en attente' || submitResult.needsConfirmation) return 'En attente de confirmation';
+    if (submitResult.status === 'échouée' || submitResult.success === false) return fallback;
+    return fallback;
+}
+
+async function resolveApplicationDocuments(job, profile, { lang = 'fr', outputDir = null } = {}) {
+    const selectedCv = job.selected_cv_id ? await getCvById(job.selected_cv_id) : null;
+    const fallbackCvPath = selectedCv?.path || await getActiveCvPath();
+
+    if (!fallbackCvPath) {
+        throw new Error(`Aucun CV disponible pour l'offre #${job.id}.`);
+    }
+
+    const docs = await buildApplicationDocuments({
+        job,
+        profile,
+        selectedCvPath: fallbackCvPath,
+        letterText: job.letter || '',
+        letterPath: job.pdf_path || null,
+        lang,
+        outputDir
+    });
+
+    return {
+        ...docs,
+        selectedCv
+    };
+}
 
 /**
  * Gère le cycle de soumission d'une candidature pour une offre.
@@ -10,7 +50,7 @@ import fs from 'fs/promises';
  * @param {number} jobId - L'identifiant de l'offre en BDD
  * @returns {Promise<Object>} Statut du traitement
  */
-export async function processJobSubmission(jobId) {
+export async function processJobSubmission(jobId, options = {}) {
     const db = await initDb();
     const job = await db('jobs').where({ id: jobId }).first();
     
@@ -18,37 +58,79 @@ export async function processJobSubmission(jobId) {
         throw new Error(`Offre #${jobId} non trouvée.`);
     }
 
-    const providerInstance = defaultRegistry.get(job.provider) || defaultRegistry.get('generic');
+    const providerInstance = resolveProvider(job.provider);
     const profile = await db('profile').where({ id: 1 }).first() || {};
 
     try {
-        const canAutoApply = providerInstance && providerInstance.supportsAutoApply(job) && job.auto_apply_supported === 1;
+        const applicationDocs = await resolveApplicationDocuments(job, profile, {
+            lang: options.lang || 'fr',
+            outputDir: options.documentOutputDir || null
+        });
+        const canAutoApply = providerInstance
+            && typeof providerInstance.supportsAutoApply === 'function'
+            && providerInstance.supportsAutoApply(job)
+            && job.auto_apply_supported === 1;
 
         if (canAutoApply) {
             console.log(`🚀 [SubmissionEngine] Tentative de dépôt automatique pour #${job.id} (${job.company}) via ${providerInstance.name}`);
             
-            const submitResult = await providerInstance.submitApplication(job, profile, job.pdf_path, job.letter);
+            const submitResult = await providerInstance.submitApplication(
+                job,
+                profile,
+                applicationDocs.tailoredCvPath,
+                applicationDocs.letterText
+            );
+            const finalStatus = submitResult?.status || (submitResult?.success ? 'réussie' : 'échouée');
+            const jobStatus = normalizeJobStatus(submitResult);
 
             await db('jobs').where({ id: jobId }).update({
-                status: 'Soumis',
-                error: null
+                status: jobStatus,
+                error: submitResult?.success ? null : (submitResult?.error || submitResult?.details || null)
             });
 
             await db('job_logs').insert({
                 job_id: jobId,
                 platform: providerInstance.name || job.provider,
-                result: 'Succès auto-apply',
-                error: null
+                result: finalStatus,
+                error: submitResult?.error || null
+            });
+
+            await recordApplicationAttempt({
+                jobId,
+                provider: providerInstance.id || job.provider,
+                mode: 'auto',
+                status: finalStatus,
+                confirmationId: submitResult?.confirmationId || '',
+                applicationUrl: submitResult?.applicationUrl || job.link || '',
+                tailoredCvPath: applicationDocs.tailoredCvPath,
+                letterPath: applicationDocs.letterPath || job.pdf_path || '',
+                details: submitResult?.details || '',
+                error: submitResult?.error || '',
+                payload: submitResult
             });
 
             console.log(`✅ [SubmissionEngine] Candidature soumise automatiquement avec succès pour ${job.company}!`);
-            return { success: true, mode: 'auto', status: 'Soumis' };
+            return {
+                success: Boolean(submitResult?.success),
+                mode: 'auto',
+                status: jobStatus,
+                attempt: submitResult
+            };
 
         } else {
             console.log(`📝 [SubmissionEngine] Auto-apply non autorisé/possible sur ${job.company}. Préparation du dossier d'attente...`);
 
             // Génération du pack de pré-remplissage
-            const pack = await providerInstance.prepareApplicationPack(job, profile, job.pdf_path, job.letter);
+            const pack = await (providerInstance?.prepareApplicationPack
+                ? providerInstance.prepareApplicationPack(job, profile, applicationDocs.tailoredCvPath, applicationDocs.letterText)
+                : Promise.resolve({
+                    providerId: providerInstance?.id || job.provider || 'unknown',
+                    providerName: providerInstance?.name || job.provider || 'unknown',
+                    applyUrl: job.link,
+                    cvPath: applicationDocs.tailoredCvPath,
+                    letterText: applicationDocs.letterText,
+                    instructions: 'Candidature préparée manuellement.'
+                }));
 
             await db('jobs').where({ id: jobId }).update({
                 status: 'En attente de confirmation',
@@ -61,6 +143,18 @@ export async function processJobSubmission(jobId) {
                 platform: providerInstance ? providerInstance.name : job.provider,
                 result: 'Dossier prêt (En attente de confirmation)',
                 error: null
+            });
+
+            await recordApplicationAttempt({
+                jobId,
+                provider: providerInstance?.id || job.provider || 'unknown',
+                mode: 'prepared',
+                status: 'en attente',
+                applicationUrl: job.link || '',
+                tailoredCvPath: applicationDocs.tailoredCvPath,
+                letterPath: applicationDocs.letterPath || job.pdf_path || '',
+                details: 'Dossier préparé pour confirmation utilisateur.',
+                payload: pack
             });
 
             console.log(`📋 [SubmissionEngine] Candidature #${jobId} entièrement préparée. En attente de confirmation utilisateur.`);
@@ -76,9 +170,27 @@ export async function processJobSubmission(jobId) {
 
         await db('job_logs').insert({
             job_id: jobId,
-            platform: job.provider || 'Inconnu',
+            platform: providerInstance?.name || job.provider || 'Inconnu',
             result: 'Échec',
             error: err.message
+        });
+
+        const selectedCv = job.selected_cv_id ? await getCvById(job.selected_cv_id) : null;
+        await recordApplicationAttempt({
+            jobId,
+            provider: providerInstance?.id || job.provider || 'unknown',
+            mode: 'auto',
+            status: 'échouée',
+            applicationUrl: job.link || '',
+            tailoredCvPath: '',
+            letterPath: job.pdf_path || '',
+            details: `Échec de traitement pour ${job.company}.`,
+            error: err.message,
+            payload: {
+                jobId,
+                selectedCvId: job.selected_cv_id || null,
+                selectedCvPath: selectedCv?.path || null
+            }
         });
 
         return { success: false, mode: 'error', error: err.message };
@@ -111,6 +223,16 @@ export async function confirmUserSubmission(jobId, overrideData = null) {
         platform: job.provider || 'Formulaire web',
         result: 'Validé par l\'utilisateur',
         error: null
+    });
+
+    await recordApplicationAttempt({
+        jobId,
+        provider: job.provider || 'manual',
+        mode: 'manual',
+        status: 'réussie',
+        applicationUrl: overrideData?.applicationUrl || job.link || '',
+        details: 'Candidature validée par l\'utilisateur.',
+        payload: overrideData || null
     });
 
     return { success: true, status: 'Soumis', message: 'Candidature marquée comme soumise par l\'utilisateur.' };

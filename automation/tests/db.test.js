@@ -35,8 +35,9 @@ test('initialise le schéma complet et enregistre une offre', async () => {
     const hasDatePosted = await db.schema.hasColumn('jobs', 'date_posted');
     const hasSelectedCvId = await db.schema.hasColumn('jobs', 'selected_cv_id');
     const hasPdfPath = await db.schema.hasColumn('jobs', 'pdf_path');
+    const hasAttemptsTable = await db.schema.hasTable('application_attempts');
 
-    assert.equal(hasSalary && hasContractType && hasDatePosted && hasSelectedCvId && hasPdfPath, true);
+    assert.equal(hasSalary && hasContractType && hasDatePosted && hasSelectedCvId && hasPdfPath && hasAttemptsTable, true);
 
     // Insérer un CV
     await db('cvs').insert({

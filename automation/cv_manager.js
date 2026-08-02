@@ -31,3 +31,8 @@ export async function getAllCvs() {
     const db = await initDb();
     return await db('cvs').select('id', 'name', 'path');
 }
+
+export async function getCvById(cvId) {
+    const db = await initDb();
+    return await db('cvs').where({ id: cvId }).first();
+}

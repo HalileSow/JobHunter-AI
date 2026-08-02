@@ -35,9 +35,14 @@ test('initialise le schéma complet et enregistre une offre', async () => {
     const hasDatePosted = await db.schema.hasColumn('jobs', 'date_posted');
     const hasSelectedCvId = await db.schema.hasColumn('jobs', 'selected_cv_id');
     const hasPdfPath = await db.schema.hasColumn('jobs', 'pdf_path');
+    const hasSearchSalary = await db.schema.hasColumn('jobs', 'search_salary');
+    const hasSearchMinSalary = await db.schema.hasColumn('jobs', 'search_min_salary');
+    const hasSearchMaxSalary = await db.schema.hasColumn('jobs', 'search_max_salary');
     const hasAttemptsTable = await db.schema.hasTable('application_attempts');
+    const hasSearchRunAnalyzedCount = await db.schema.hasColumn('search_runs', 'analyzed_jobs_count');
+    const hasScheduleLastStatus = await db.schema.hasColumn('scheduled_searches', 'last_status');
 
-    assert.equal(hasSalary && hasContractType && hasDatePosted && hasSelectedCvId && hasPdfPath && hasAttemptsTable, true);
+    assert.equal(hasSalary && hasContractType && hasDatePosted && hasSelectedCvId && hasPdfPath && hasSearchSalary && hasSearchMinSalary && hasSearchMaxSalary && hasAttemptsTable && hasSearchRunAnalyzedCount && hasScheduleLastStatus, true);
 
     // Insérer un CV
     await db('cvs').insert({

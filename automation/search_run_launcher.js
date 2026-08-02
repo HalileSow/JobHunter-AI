@@ -4,10 +4,12 @@ import { fileURLToPath } from 'node:url';
 import { initDb } from './db.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const automationScript = path.join(__dirname, 'main.js');
+const automationScript = path.join(__dirname, 'scheduled_search_runner.js');
 
 export async function launchSearchRun({
     runId,
+    scheduleId = null,
+    nextRunAt = null,
     country,
     title,
     keywords = '',
@@ -24,7 +26,10 @@ export async function launchSearchRun({
     const db = await initDb();
     const payload = {
         ...advancedFilters,
-        selectedProviderIds
+        selectedProviderIds,
+        runId,
+        scheduleId,
+        nextRunAt
     };
 
     const child = spawn(process.execPath, [automationScript, country, title, keywords || '', lang || 'fr', JSON.stringify(payload)], {

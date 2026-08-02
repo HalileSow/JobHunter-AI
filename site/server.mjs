@@ -16,6 +16,11 @@ const JWT_SECRET = process.env.JWT_SECRET || 'dev-secret-key';
 const generatedLettersDirectory = path.join(__dirname, '..', 'cover_letters', 'generated');
 const port = Number(process.env.PORT || 4173);
 const allowedLanguages = new Set(['fr', 'en', 'de']);
+const cronPresetMap = {
+    hourly: '0 * * * *',
+    daily: '0 0 * * *',
+    weekly: '0 8 * * 1-5'
+};
 
 function requiredText(value, label) {
     if (typeof value !== 'string' || !value.trim()) {
@@ -38,6 +43,18 @@ function parseProviderSelection(rawValue) {
     } catch {
         return [];
     }
+}
+
+function normalizeCronExpression(rawValue, fallback = '0 * * * *') {
+    const value = requiredText(rawValue, 'Expression cron').toLowerCase();
+    if (cronPresetMap[value]) return cronPresetMap[value];
+
+    const fields = value.split(/\s+/);
+    if (fields.length === 5) {
+        return value;
+    }
+
+    throw new Error('Expression cron invalide. Utilisez hourly, daily ou une expression cron 5 champs.');
 }
 
 async function withDb(operation) {
@@ -105,13 +122,19 @@ function createApp() {
     app.get('/api/system/status', async (req, res) => {
         try {
             const stats = await withDb(async (db) => {
-                const [jobsCount] = await db('jobs').count('id as count');
-                const [runsCount] = await db('search_runs').count('id as count');
-                return {
-                    totalJobs: Number(jobsCount?.count || 0),
-                    totalSearchRuns: Number(runsCount?.count || 0)
-                };
-            });
+            const [jobsCount] = await db('jobs').count('id as count');
+            const [runsCount] = await db('search_runs').count('id as count');
+            const latestSearchRun = await db('search_runs').select('*').orderBy('created_at', 'desc').orderBy('id', 'desc').first();
+            return {
+                totalJobs: Number(jobsCount?.count || 0),
+                totalSearchRuns: Number(runsCount?.count || 0),
+                latestSearchRun: latestSearchRun || null,
+                lastSearchAt: latestSearchRun?.finished_at || latestSearchRun?.started_at || null,
+                lastSearchStatus: latestSearchRun?.status || 'unknown',
+                lastAnalyzedJobs: Number(latestSearchRun?.analyzed_jobs_count || 0),
+                lastNewJobs: Number(latestSearchRun?.saved_jobs_count || 0)
+            };
+        });
             const providers = defaultRegistry.getMetadataList();
             const activeProviders = providers.filter(p => p.enabled).length;
             res.json({
@@ -179,7 +202,7 @@ function createApp() {
             const title = requiredText(req.body?.title, 'Métier');
             const keywords = optionalText(req.body?.keywords);
             const lang = allowedLanguages.has(req.body?.lang) ? req.body.lang : 'fr';
-            const cron_expression = requiredText(req.body?.cron_expression, 'Expression cron');
+            const cron_expression = normalizeCronExpression(req.body?.cron_expression || req.body?.schedule_mode || 'hourly');
             const city = optionalText(req.body?.city);
             const experience_level = optionalText(req.body?.experience_level);
             const contract_type = optionalText(req.body?.contract_type);

@@ -47,6 +47,7 @@ function initSSE() {
         try {
             const data = JSON.parse(e.data || '{}');
             if (typeof loadSearchRuns === 'function') loadSearchRuns();
+            if (typeof loadSystemStatus === 'function') loadSystemStatus();
             if (data.status === 'completed') {
                 showToast('Recherche multi-providers terminée !', 'success');
                 if (typeof loadJobs === 'function') loadJobs();
@@ -120,6 +121,7 @@ async function loadJobs() {
     totalEl.textContent = jobs.length;
     const avg = jobs.length ? Math.round(jobs.reduce((a, b) => a + (b.score || 0), 0) / jobs.length) : 0;
     avgEl.textContent = `${avg}%`;
+    await loadSystemStatus();
     
     list.innerHTML = jobs.length ? jobs.map(job => {
         const badgeClass = getStatusClass(job.status);
@@ -181,6 +183,36 @@ async function loadJobs() {
             </div>
         `;
     }).join('') : '<p class="empty-state">Aucune offre analysée pour le moment.</p>';
+}
+
+async function loadSystemStatus() {
+    try {
+        const status = await api('/system/status');
+        const analyzedEl = document.getElementById('last-search-analyzed');
+        const newJobsEl = document.getElementById('last-search-new');
+        const lastSearchEl = document.getElementById('last-search-time');
+        const systemStatusEl = document.getElementById('system-status');
+
+        if (analyzedEl) analyzedEl.textContent = String(status.lastAnalyzedJobs || 0);
+        if (newJobsEl) newJobsEl.textContent = String(status.lastNewJobs || 0);
+        if (lastSearchEl) {
+            lastSearchEl.textContent = status.lastSearchAt ? new Date(status.lastSearchAt).toLocaleString('fr-FR') : 'Jamais';
+        }
+        if (systemStatusEl && status.lastSearchStatus) {
+            const isHealthy = status.lastSearchStatus !== 'failed';
+            const label = status.lastSearchStatus === 'completed'
+                ? 'OK'
+                : status.lastSearchStatus === 'running'
+                    ? 'En cours'
+                    : status.lastSearchStatus === 'queued'
+                        ? 'En attente'
+                        : 'Erreur';
+            systemStatusEl.innerHTML = `${isHealthy ? '<span class="pulse-dot"></span>' : '<i class="fas fa-exclamation-triangle"></i>'} ${escapeHtml(label)}`;
+            systemStatusEl.style.color = isHealthy ? '#10b981' : '#f59e0b';
+        }
+    } catch (error) {
+        console.error('Erreur chargement statut système:', error);
+    }
 }
 
 async function deleteJob(id) {
@@ -329,10 +361,17 @@ async function loadSearchRuns() {
         const runs = await api('/search-runs');
         const list = document.getElementById('search-runs-list');
         list.innerHTML = runs.length ? runs.map((run) => `
-            <article class="run-card" style="display: flex; justify-content: space-between; align-items: center; background: #1e293b; padding: 12px; border-radius: 6px; margin-bottom: 8px;">
+            <article class="run-card" style="display: flex; justify-content: space-between; align-items: center; gap: 12px; background: #1e293b; padding: 12px; border-radius: 6px; margin-bottom: 8px;">
                 <div>
                     <strong style="color: #f8fafc;">${escapeHtml(run.title)}</strong>
                     <span style="color: #94a3b8; font-size: 0.85rem; margin-left: 10px;">${escapeHtml(run.country)}${run.keywords ? ` · ${escapeHtml(run.keywords)}` : ''}</span>
+                    <div style="color: #cbd5e1; font-size: 0.8rem; margin-top: 4px;">
+                        <i class="fas fa-search"></i> Analysées: ${Number(run.analyzed_jobs_count || 0)}
+                        <span style="margin: 0 6px;">|</span>
+                        <i class="fas fa-plus-circle"></i> Nouvelles: ${Number(run.saved_jobs_count || 0)}
+                        <span style="margin: 0 6px;">|</span>
+                        <i class="fas fa-layer-group"></i> Doublons: ${Number(run.duplicate_jobs_count || 0)}
+                    </div>
                 </div>
                 <span class="run-status status-${escapeHtml(run.status)}" style="font-size: 0.8rem; font-weight: 600;">${runStatusLabels[run.status] || 'Inconnue'}</span>
             </article>
@@ -448,6 +487,7 @@ async function runConfig(id) {
     try {
         const res = await api(`/search-configs/${id}/run`, 'POST');
         showToast(res.message || 'Recherche lancée !', 'success');
+        loadSearchRuns();
     } catch (e) {
         alert(e.message);
     }
@@ -505,11 +545,9 @@ loadJobs();
 // === SCHEDULER (Recherches planifiées) ===
 
 const CRON_LABELS = {
-    '0 */6 * * *': 'Toutes les 6 heures',
-    '0 */3 * * *': 'Toutes les 3 heures',
-    '0 */12 * * *': 'Toutes les 12 heures',
-    '0 8 * * *': 'Chaque jour \u00e0 8h',
-    '0 8 * * 1-5': 'Lundi\u2013Vendredi \u00e0 8h'
+    '0 * * * *': 'Toutes les heures',
+    '0 0 * * *': 'Chaque jour à minuit',
+    '0 8 * * 1-5': 'Lundi–Vendredi à 8h'
 };
 
 async function loadSchedules() {
@@ -524,6 +562,7 @@ async function loadSchedules() {
                 const statusLabel = s.enabled ? 'Actif' : 'Suspendu';
                 const lastRun = s.last_run_at ? new Date(s.last_run_at).toLocaleString('fr-FR') : 'Jamais';
                 const salaryLabel = [s.salary ? `Salaire ${s.salary}` : '', s.min_salary ? `Min ${s.min_salary}` : '', s.max_salary ? `Max ${s.max_salary}` : ''].filter(Boolean).join(' | ');
+                const lastStatus = s.last_status === 'success' ? 'Succès' : s.last_status === 'error' ? 'Erreur' : (s.last_status || '—');
 
             return `
                 <div class="run-item" style="display:flex; justify-content:space-between; align-items:center; padding:14px; background: var(--bg-card); border-radius:10px; border-left: 4px solid ${statusColor}; margin-bottom: 10px;">
@@ -536,6 +575,9 @@ async function loadSchedules() {
                         ${salaryLabel ? `<div style="color: #fbbf24; font-size: 0.8rem; margin-top: 4px;"><i class="fas fa-coins"></i> ${escapeHtml(salaryLabel)}</div>` : ''}
                         <div style="color: #9ca3af; font-size: 0.8rem; margin-top: 4px;">
                             <i class="fas fa-clock"></i> ${escapeHtml(cronLabel)} | <i class="fas fa-history"></i> ${s.total_runs} ex\u00e9cution(s) | Derni\u00e8re : ${lastRun}
+                        </div>
+                        <div style="color: #cbd5e1; font-size: 0.8rem; margin-top: 4px;">
+                            <i class="fas fa-chart-line"></i> Analysées: ${Number(s.last_analyzed_jobs_count || 0)} | <i class="fas fa-plus-circle"></i> Nouvelles: ${Number(s.last_new_jobs_count || 0)} | <i class="fas fa-circle-info"></i> Statut: ${escapeHtml(lastStatus)}
                         </div>
                     </div>
                     <div style="display:flex; gap:8px; align-items:center;">
@@ -587,7 +629,13 @@ document.getElementById('btn-create-schedule')?.addEventListener('click', async 
     const remote = document.getElementById('sched-remote')?.value || '';
     const min_salary = document.getElementById('sched-min-salary')?.value || '';
     const max_salary = document.getElementById('sched-max-salary')?.value || '';
-    const cron_expression = document.getElementById('sched-cron')?.value;
+    const frequency = document.getElementById('sched-frequency')?.value || 'hourly';
+    const customCron = document.getElementById('sched-cron-expression')?.value?.trim() || '';
+    const cron_expression = frequency === 'cron'
+        ? customCron
+        : frequency === 'daily'
+            ? '0 0 * * *'
+            : '0 * * * *';
 
     if (!name || !country || !title) {
         alert('Veuillez remplir le nom, le pays et le m\u00e9tier.');
@@ -605,3 +653,23 @@ document.getElementById('btn-create-schedule')?.addEventListener('click', async 
         alert(e.message);
     }
 });
+
+document.getElementById('sched-frequency')?.addEventListener('change', () => {
+    const customInput = document.getElementById('sched-cron-expression');
+    if (!customInput) return;
+    const isCustom = document.getElementById('sched-frequency')?.value === 'cron';
+    customInput.disabled = !isCustom;
+});
+
+document.getElementById('sched-cron-presets')?.addEventListener('change', () => {
+    const preset = document.getElementById('sched-cron-presets')?.value;
+    const customInput = document.getElementById('sched-cron-expression');
+    const frequencyInput = document.getElementById('sched-frequency');
+    if (!preset || !customInput) return;
+    customInput.value = preset;
+    customInput.disabled = false;
+    if (frequencyInput) frequencyInput.value = 'cron';
+});
+
+document.getElementById('sched-frequency')?.dispatchEvent(new Event('change'));
+loadSystemStatus();

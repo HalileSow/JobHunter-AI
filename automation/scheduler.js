@@ -109,22 +109,17 @@ async function tick() {
             status: 'queued'
         }).returning('id');
         const runId = inserted?.id || inserted;
+        const nextRun = computeNextRun(schedule.cron_expression);
         await launchSearchRun({
             runId,
+            scheduleId: schedule.id,
+            nextRunAt: nextRun ? nextRun.toISOString() : null,
             country: schedule.country,
             title: schedule.title,
             keywords: schedule.keywords || '',
             lang: schedule.lang || 'fr',
             advancedFilters,
             selectedProviderIds: parseProviderSelection(schedule.providers_list)
-        });
-
-        const nextRun = computeNextRun(schedule.cron_expression);
-
-        await db('scheduled_searches').where({ id: schedule.id }).update({
-            last_run_at: db.fn.now(),
-            next_run_at: nextRun ? nextRun.toISOString() : null,
-            total_runs: schedule.total_runs + 1
         });
 
     }

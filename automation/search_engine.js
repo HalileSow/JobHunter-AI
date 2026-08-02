@@ -281,7 +281,13 @@ export async function executeMultiProviderSearch({ country, jobTitle, keywords =
         console.log(`🔍 Après filtrage avancé : ${filteredJobs.length} offre(s) correspondent aux critères.`);
     }
 
-    return filteredJobs;
+    return {
+        jobs: filteredJobs,
+        rawJobsFound: rawJobs.length,
+        uniqueJobsFound: uniqueJobs.length,
+        filteredJobsFound: filteredJobs.length,
+        providersUsed: providersToUse.map((provider) => provider.id)
+    };
 }
 
 /**
@@ -292,11 +298,20 @@ export async function runFullJobHunterSearch({ country, jobTitle, keywords = '',
     const db = await initDb();
 
     // 1. Démarrer la recherche multi-providers avec filtres avancés
-    const uniqueJobs = await executeMultiProviderSearch({ country, jobTitle, keywords, city, experienceLevel, contractType, remote, jobType, salary, minSalary, maxSalary, selectedProviderIds });
+    const searchResult = await executeMultiProviderSearch({ country, jobTitle, keywords, city, experienceLevel, contractType, remote, jobType, salary, minSalary, maxSalary, selectedProviderIds });
+    const uniqueJobs = searchResult.jobs;
 
     if (uniqueJobs.length === 0) {
         console.log(`ℹ️ Aucune nouvelle offre trouvée pour ${jobTitle} en ${country}.`);
-        return { jobsFound: 0, jobsSaved: 0, jobs: [] };
+        return {
+            rawJobsFound: searchResult.rawJobsFound || 0,
+            uniqueJobsFound: searchResult.uniqueJobsFound || 0,
+            jobsAnalyzed: 0,
+            jobsFound: 0,
+            jobsSaved: 0,
+            duplicateJobsSkipped: 0,
+            jobs: []
+        };
     }
 
     // 2. Charger les CVs disponibles
@@ -311,6 +326,8 @@ export async function runFullJobHunterSearch({ country, jobTitle, keywords = '',
     }));
 
     const processedJobs = [];
+    let analyzedCount = 0;
+    let duplicateJobsSkipped = 0;
 
     // 3. Traitement et classification par IA
     for (const job of uniqueJobs) {
@@ -318,6 +335,7 @@ export async function runFullJobHunterSearch({ country, jobTitle, keywords = '',
         const existingInDb = await db('jobs').where({ dedup_hash: job.dedup_hash }).first();
         if (existingInDb) {
             console.log(`⏩ Offre déjà existante en BDD : ${job.title} chez ${job.company}`);
+            duplicateJobsSkipped += 1;
             processedJobs.push(existingInDb);
             continue;
         }
@@ -326,6 +344,7 @@ export async function runFullJobHunterSearch({ country, jobTitle, keywords = '',
         const offerText = `Titre: ${job.title}\nEntreprise: ${job.company}\nLieu: ${job.location || country}\nLien: ${job.link}\nSources: ${(job.providers_list || []).join(', ')}\nDescription: ${job.description || 'Description non fournie.'}`;
 
         try {
+            analyzedCount += 1;
             // A. Sélection du CV idéal
             const bestCvId = await selectBestCv(offerText, cvsWithContent);
             const selectedCv = cvsWithContent.find(c => c.id === bestCvId) || cvsWithContent[0];
@@ -393,8 +412,12 @@ export async function runFullJobHunterSearch({ country, jobTitle, keywords = '',
     processedJobs.sort((a, b) => (b.score || 0) - (a.score || 0));
 
     return {
+        rawJobsFound: searchResult.rawJobsFound || 0,
+        uniqueJobsFound: searchResult.uniqueJobsFound || uniqueJobs.length,
+        jobsAnalyzed: analyzedCount,
         jobsFound: uniqueJobs.length,
         jobsSaved: processedJobs.length,
+        duplicateJobsSkipped,
         jobs: processedJobs
     };
 }

@@ -17,6 +17,7 @@ yarn-error.log*
 # Runtime data
 database/*.db
 database/backups/*.db
+cover_letters/generated/
 
 # IDE files
 .vscode/

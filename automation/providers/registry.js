@@ -63,6 +63,14 @@ export class ProviderRegistry {
     }
 
     /**
+     * Récupère les providers activés, sans filtrage pays.
+     * Utile pour les recherches planifiées qui doivent balayer toutes les sources actives.
+     */
+    getEnabled() {
+        return this.getAll().filter((provider) => provider.enabled);
+    }
+
+    /**
      * Active ou désactive un provider.
      * @param {string} id
      * @param {boolean} enabled

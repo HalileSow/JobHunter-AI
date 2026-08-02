@@ -46,6 +46,18 @@
                             <span class="stat-value" id="avg-score">0%</span>
                         </div>
                         <div class="stat-card">
+                            <span class="stat-label">Offres Analysées</span>
+                            <span class="stat-value" id="last-search-analyzed">0</span>
+                        </div>
+                        <div class="stat-card">
+                            <span class="stat-label">Nouvelles Offres</span>
+                            <span class="stat-value" id="last-search-new">0</span>
+                        </div>
+                        <div class="stat-card">
+                            <span class="stat-label">Dernière Recherche</span>
+                            <span class="stat-value" id="last-search-time">Jamais</span>
+                        </div>
+                        <div class="stat-card">
                             <span class="stat-label">Flux Temps Réel</span>
                             <span class="stat-value" id="system-status" style="font-size: 1rem; color: #10b981; display: flex; align-items: center; gap: 8px;">
                                 <span class="pulse-dot"></span> Connecté
@@ -294,13 +306,24 @@
                             <input type="number" id="sched-max-salary" min="0" step="1000" placeholder="Ex: 60000">
                         </div>
                         <div class="form-group" style="flex:1;">
-                            <label>Fréquence (cron)</label>
-                            <select id="sched-cron">
-                                <option value="0 */6 * * *">Toutes les 6 heures</option>
-                                <option value="0 */3 * * *">Toutes les 3 heures</option>
-                                <option value="0 */12 * * *">Toutes les 12 heures</option>
-                                <option value="0 8 * * *">Chaque jour à 8h</option>
-                                <option value="0 8 * * 1-5">Lundi–Vendredi à 8h</option>
+                            <label>Fréquence</label>
+                            <select id="sched-frequency">
+                                <option value="hourly">Toutes les heures</option>
+                                <option value="daily">Tous les jours</option>
+                                <option value="cron">Expression cron personnalisée</option>
+                            </select>
+                        </div>
+                        <div class="form-group" style="flex:1;">
+                            <label>Expression cron</label>
+                            <input type="text" id="sched-cron-expression" value="0 * * * *" placeholder="Ex: 0 8 * * 1-5">
+                        </div>
+                        <div class="form-group" style="flex:1;">
+                            <label>Exemples rapides</label>
+                            <select id="sched-cron-presets">
+                                <option value="">Sélectionner un modèle</option>
+                                <option value="0 * * * *">Chaque heure</option>
+                                <option value="0 0 * * *">Chaque jour à minuit</option>
+                                <option value="0 8 * * 1-5">Lundi à vendredi à 8h</option>
                             </select>
                         </div>
                     </div>

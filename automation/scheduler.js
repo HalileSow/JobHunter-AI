@@ -4,7 +4,73 @@ import { launchSearchRun } from './search_run_launcher.js';
 import { runFullJobHunterSearch } from './search_engine.js';
 import { processJobSubmission } from './submission_engine.js';
 
-// ... (fonctions parseProviderSelection, matchesCron, matchesField, computeNextRun restent inchangées)
+function parseProviderSelection(rawValue) {
+    if (Array.isArray(rawValue)) return rawValue;
+    if (typeof rawValue !== 'string' || !rawValue.trim()) return [];
+
+    try {
+        const parsed = JSON.parse(rawValue);
+        return Array.isArray(parsed) ? parsed : [];
+    } catch {
+        return [];
+    }
+}
+
+/**
+ * Parse une expression cron simplifiée (5 champs : minute heure jour_mois mois jour_semaine).
+ * Retourne true si "now" correspond à l'expression.
+ */
+function matchesCron(expression, now = new Date()) {
+    const fields = expression.trim().split(/\s+/);
+    if (fields.length !== 5) return false;
+
+    const values = [
+        now.getMinutes(),
+        now.getHours(),
+        now.getDate(),
+        now.getMonth() + 1,
+        now.getDay()
+    ];
+
+    return fields.every((field, i) => matchesField(field, values[i]));
+}
+
+function matchesField(field, value) {
+    // Wildcard
+    if (field === '*') return true;
+
+    // Interval: */N
+    const stepMatch = field.match(/^\*\/(\d+)$/);
+    if (stepMatch) return value % Number(stepMatch[1]) === 0;
+
+    // List: 1,5,10
+    if (field.includes(',')) {
+        return field.split(',').map(Number).includes(value);
+    }
+
+    // Range: 1-5
+    if (field.includes('-')) {
+        const [lo, hi] = field.split('-').map(Number);
+        return value >= lo && value <= hi;
+    }
+
+    // Exact
+    return Number(field) === value;
+}
+
+/**
+ * Calcule le prochain déclenchement approximatif basé sur l'expression cron.
+ */
+function computeNextRun(expression) {
+    const now = new Date();
+    // On scanne les 1440 prochaines minutes (24h)
+    for (let i = 1; i <= 1440; i++) {
+        const candidate = new Date(now.getTime() + i * 60000);
+        candidate.setSeconds(0, 0);
+        if (matchesCron(expression, candidate)) return candidate;
+    }
+    return null;
+}
 
 /**
  * Vérifie les recherches planifiées, lance la recherche complète,
@@ -99,4 +165,35 @@ async function tick() {
         }
     }
 }
-// ... (startScheduler, stopScheduler, restent inchangés)
+
+/**
+ * Démarre le planificateur intégré. Vérifie chaque minute.
+ */
+let schedulerInterval = null;
+
+export function startScheduler() {
+    if (schedulerInterval) return;
+    console.log('🕐 [Scheduler] Planificateur de recherches automatiques démarré (vérification chaque minute).');
+    schedulerInterval = setInterval(() => {
+        tick().catch((err) => console.error(`❌ [Scheduler] Erreur : ${err.message}`));
+    }, 60_000);
+
+    // Sauvegarde automatique toutes les 12h
+    setInterval(() => {
+        backupDatabase().then((res) => {
+            console.log(`💾 [Scheduler] Sauvegarde auto : ${res.backupFileName}`);
+        }).catch((err) => {
+            console.error(`❌ [Scheduler] Échec sauvegarde auto : ${err.message}`);
+        });
+    }, 12 * 60 * 60 * 1000);
+}
+
+export function stopScheduler() {
+    if (schedulerInterval) {
+        clearInterval(schedulerInterval);
+        schedulerInterval = null;
+        console.log('🛑 [Scheduler] Planificateur arrêté.');
+    }
+}
+
+export { matchesCron, computeNextRun, tick };

@@ -1,0 +1,1 @@
+Vérifier le résultat du déploiement Render en lisant les fichiers de sortie des tâches background (bg_e91f6263 et bg_324906cb) et en faisant un curl vers https://jobhunter-ai.onrender.com/api/health

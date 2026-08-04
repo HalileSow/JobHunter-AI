@@ -94,16 +94,36 @@ function createApp() {
     }
 
     app.get('/api/events', (req, res) => {
+        // Authentification optionnelle pour SSE (via header ou query param)
+        const authHeader = req.headers['authorization'];
+        let token = authHeader && authHeader.split(' ')[1];
+        
+        // Fallback: token via query parameter (pour EventSource qui ne supporte pas les headers)
+        if (!token && req.query.token) {
+            token = req.query.token;
+        }
+        
+        let authenticated = false;
+        
+        if (token) {
+            try {
+                jwt.verify(token, JWT_SECRET);
+                authenticated = true;
+            } catch {
+                // Client non authentifié, on continue quand même
+            }
+        }
+        
         res.setHeader('Content-Type', 'text/event-stream');
         res.setHeader('Cache-Control', 'no-cache');
         res.setHeader('Connection', 'keep-alive');
         res.flushHeaders();
 
         const clientId = Date.now() + Math.random();
-        const newClient = { id: clientId, res };
+        const newClient = { id: clientId, res, authenticated };
         sseClients.push(newClient);
 
-        res.write(`event: connected\ndata: ${JSON.stringify({ status: 'connected', clientId })}\n\n`);
+        res.write(`event: connected\ndata: ${JSON.stringify({ status: 'connected', clientId, authenticated })}\n\n`);
 
         req.on('close', () => {
             sseClients = sseClients.filter((c) => c.id !== clientId);
@@ -124,15 +144,23 @@ function createApp() {
             const stats = await withDb(async (db) => {
             const [jobsCount] = await db('jobs').count('id as count');
             const [runsCount] = await db('search_runs').count('id as count');
+            // Prendre le dernier run terminé pour les statistiques
+            const latestCompletedRun = await db('search_runs')
+                .select('*')
+                .whereIn('status', ['completed', 'failed'])
+                .orderBy('finished_at', 'desc')
+                .orderBy('id', 'desc')
+                .first();
+            // Prendre le dernier run (quel que soit son statut) pour l'état actuel
             const latestSearchRun = await db('search_runs').select('*').orderBy('created_at', 'desc').orderBy('id', 'desc').first();
             return {
                 totalJobs: Number(jobsCount?.count || 0),
                 totalSearchRuns: Number(runsCount?.count || 0),
                 latestSearchRun: latestSearchRun || null,
-                lastSearchAt: latestSearchRun?.finished_at || latestSearchRun?.started_at || null,
-                lastSearchStatus: latestSearchRun?.status || 'unknown',
-                lastAnalyzedJobs: Number(latestSearchRun?.analyzed_jobs_count || 0),
-                lastNewJobs: Number(latestSearchRun?.saved_jobs_count || 0)
+                lastSearchAt: latestCompletedRun?.finished_at || latestSearchRun?.finished_at || latestSearchRun?.started_at || null,
+                lastSearchStatus: latestCompletedRun?.status || latestSearchRun?.status || 'unknown',
+                lastAnalyzedJobs: Number(latestCompletedRun?.analyzed_jobs_count || latestSearchRun?.analyzed_jobs_count || 0),
+                lastNewJobs: Number(latestCompletedRun?.saved_jobs_count || latestSearchRun?.saved_jobs_count || 0)
             };
         });
             const providers = defaultRegistry.getMetadataList();
@@ -183,6 +211,10 @@ function createApp() {
         }
     });
 
+    // Routes publiques (sans authentification)
+    // /api/events, /api/health, /api/system/status, /api/auth/* sont publics
+    
+    // Routes protégées (authentification requise)
     app.use(['/api/jobs', '/api/cvs', '/api/profile', '/api/search', '/api/search-runs', '/api/providers', '/api/admin', '/api/schedules', '/api/search-configs'], auth);
 
     // Endpoints Recherches Planifiées

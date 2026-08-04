@@ -314,16 +314,18 @@ export async function runFullJobHunterSearch({ country, jobTitle, keywords = '',
         };
     }
 
-    // 2. Charger les CVs disponibles
+    // 2. Charger les CVs disponibles (optionnel)
     const allCvs = await getAllCvs();
+    let cvsWithContent = [];
+    
     if (allCvs.length === 0) {
-        throw new Error("Aucun CV disponible dans la base de données.");
+        console.log(`⚠️ Aucun CV disponible dans la base de données. Les offres seront sauvegardées avec un score par défaut.`);
+    } else {
+        cvsWithContent = await Promise.all(allCvs.map(async cv => {
+            const content = await fs.readFile(cv.path, 'utf-8');
+            return { ...cv, content };
+        }));
     }
-
-    const cvsWithContent = await Promise.all(allCvs.map(async cv => {
-        const content = await fs.readFile(cv.path, 'utf-8');
-        return { ...cv, content };
-    }));
 
     const processedJobs = [];
     let analyzedCount = 0;
@@ -336,6 +338,7 @@ export async function runFullJobHunterSearch({ country, jobTitle, keywords = '',
         if (existingInDb) {
             console.log(`⏩ Offre déjà existante en BDD : ${job.title} chez ${job.company}`);
             duplicateJobsSkipped += 1;
+            analyzedCount += 1; // Compter comme analysée (déjà en BDD)
             processedJobs.push(existingInDb);
             continue;
         }
@@ -345,19 +348,33 @@ export async function runFullJobHunterSearch({ country, jobTitle, keywords = '',
 
         try {
             analyzedCount += 1;
-            // A. Sélection du CV idéal
-            const bestCvId = await selectBestCv(offerText, cvsWithContent);
-            const selectedCv = cvsWithContent.find(c => c.id === bestCvId) || cvsWithContent[0];
+            
+            let aiResult;
+            let selectedCv = null;
+            let pdfPath = null;
+            
+            // Si aucun CV disponible, utiliser un score par défaut
+            if (cvsWithContent.length === 0) {
+                aiResult = {
+                    score: 50,
+                    letter: 'Lettre de motivation non générée (aucun CV disponible).',
+                    analysis: 'Analyse simplifiée sans CV de référence.'
+                };
+            } else {
+                // A. Sélection du CV idéal
+                const bestCvId = await selectBestCv(offerText, cvsWithContent);
+                selectedCv = cvsWithContent.find(c => c.id === bestCvId) || cvsWithContent[0];
 
-            // B. Scoring et rédaction de la lettre
-            const aiResult = await analyzeJob(offerText, selectedCv.path, lang);
+                // B. Scoring et rédaction de la lettre
+                aiResult = await analyzeJob(offerText, selectedCv.path, lang);
 
-            // C. Export PDF de la lettre de motivation
-            const safeCompany = (job.company || 'Entreprise').replace(/[^a-zA-Z0-9_-]/g, '_');
-            const pdfFilename = `${safeCompany}_${Date.now()}_${lang}.pdf`;
-            const pdfPath = path.resolve(__dirname, `../cover_letters/generated/${pdfFilename}`);
-            await fs.mkdir(path.dirname(pdfPath), { recursive: true });
-            await exportLetterToPdf(aiResult.letter, job.company, pdfPath);
+                // C. Export PDF de la lettre de motivation
+                const safeCompany = (job.company || 'Entreprise').replace(/[^a-zA-Z0-9_-]/g, '_');
+                const pdfFilename = `${safeCompany}_${Date.now()}_${lang}.pdf`;
+                pdfPath = path.resolve(__dirname, `../cover_letters/generated/${pdfFilename}`);
+                await fs.mkdir(path.dirname(pdfPath), { recursive: true });
+                await exportLetterToPdf(aiResult.letter, job.company, pdfPath);
+            }
 
             // D. Déterminer si le provider supporte l'auto-apply
             const providerInstance = defaultRegistry.get(job.provider);
@@ -387,7 +404,7 @@ export async function runFullJobHunterSearch({ country, jobTitle, keywords = '',
                 search_min_salary: minSalary || '',
                 search_max_salary: maxSalary || '',
                 date_posted: job.date_posted || new Date().toISOString().split('T')[0],
-                selected_cv_id: selectedCv.id,
+                selected_cv_id: selectedCv?.id || null,
                 pdf_path: pdfPath,
                 provider: job.provider || 'generic',
                 dedup_hash: job.dedup_hash,

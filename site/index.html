@@ -8,7 +8,36 @@
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
 </head>
 <body>
-    <div class="app-container">
+    <div id="auth-screen" class="auth-screen" style="display:none;">
+        <div class="auth-card">
+            <div class="auth-logo"><i class="fas fa-robot"></i> JobHunter AI</div>
+            <h2 id="auth-title">Connexion</h2>
+            <form id="auth-form">
+                <div class="form-group" id="auth-name-group" style="display:none;">
+                    <label for="auth-name">Nom complet</label>
+                    <input type="text" id="auth-name" placeholder="Votre nom">
+                </div>
+                <div class="form-group">
+                    <label for="auth-email">Email</label>
+                    <input type="email" id="auth-email" placeholder="votre@email.com" required>
+                </div>
+                <div class="form-group">
+                    <label for="auth-password">Mot de passe</label>
+                    <input type="password" id="auth-password" placeholder="••••••••" required>
+                </div>
+                <button type="submit" id="auth-submit" class="btn-primary" style="width:100%;margin-top:1rem;">
+                    <i class="fas fa-sign-in-alt"></i> Se connecter
+                </button>
+            </form>
+            <p id="auth-feedback" style="color:#fca5a5;margin-top:1rem;font-size:0.9rem;min-height:1.2em;"></p>
+            <p style="margin-top:1rem;color:#94a3b8;font-size:0.9rem;">
+                <span id="auth-toggle-text">Pas encore de compte ?</span>
+                <a href="#" id="auth-toggle" style="color:#818cf8;">Créer un compte</a>
+            </p>
+        </div>
+    </div>
+
+    <div id="app-container" class="app-container" style="display:none;">
         <!-- Sidebar -->
         <aside class="sidebar">
             <div class="logo">
@@ -27,6 +56,7 @@
             <div class="user-profile">
                 <img src="assets/profile.jpg" alt="Profile" onerror="this.src='https://via.placeholder.com/40'">
                 <span>Ibrahima Sow</span>
+                <button onclick="logout()" style="background:none;border:none;color:#94a3b8;cursor:pointer;font-size:0.8rem;margin-top:4px;padding:2px 6px;" title="Se déconnecter"><i class="fas fa-sign-out-alt"></i> Déconnexion</button>
             </div>
         </aside>
 

@@ -1,13 +1,151 @@
 async function api(endpoint, method = 'GET', body = null) {
-    const options = {
-        method,
-        headers: { 'Content-Type': 'application/json' }
-    };
+    const token = localStorage.getItem('jwt_token');
+    const headers = { 'Content-Type': 'application/json' };
+    if (token) headers['Authorization'] = `Bearer ${token}`;
+    const options = { method, headers };
     if (body) options.body = JSON.stringify(body);
-    const response = await fetch(`/api${endpoint}`, options);
-    const data = await response.json();
+
+    let response;
+    try {
+        response = await fetch(`/api${endpoint}`, options);
+    } catch (networkError) {
+        console.error(`NetworkError pour ${endpoint}:`, networkError);
+        throw new Error('Erreur réseau. Vérifiez votre connexion.');
+    }
+
+    let data;
+    const contentType = response.headers.get('content-type') || '';
+    if (contentType.includes('application/json')) {
+        data = await response.json();
+    } else {
+        const text = await response.text();
+        data = { error: text || `Erreur HTTP ${response.status}` };
+    }
+
+    if (response.status === 401 || response.status === 403) {
+        localStorage.removeItem('jwt_token');
+        showAuthScreen();
+        throw new Error('Session expirée. Veuillez vous reconnecter.');
+    }
+
     if (!response.ok) throw new Error(data.error || 'Une erreur est survenue.');
     return data;
+}
+
+// === AUTHENTIFICATION ===
+let authMode = 'login';
+
+function showAuthScreen() {
+    const authScreen = document.getElementById('auth-screen');
+    const appContainer = document.getElementById('app-container');
+    if (authScreen) authScreen.style.display = 'flex';
+    if (appContainer) appContainer.style.display = 'none';
+}
+
+function hideAuthScreen() {
+    const authScreen = document.getElementById('auth-screen');
+    const appContainer = document.getElementById('app-container');
+    if (authScreen) authScreen.style.display = 'none';
+    if (appContainer) appContainer.style.display = 'flex';
+}
+
+function initAuth() {
+    const token = localStorage.getItem('jwt_token');
+    if (token) {
+        hideAuthScreen();
+        initApp();
+    } else {
+        showAuthScreen();
+    }
+
+    const authForm = document.getElementById('auth-form');
+    const authToggle = document.getElementById('auth-toggle');
+    const authTitle = document.getElementById('auth-title');
+    const authSubmit = document.getElementById('auth-submit');
+    const authNameGroup = document.getElementById('auth-name-group');
+    const authToggleText = document.getElementById('auth-toggle-text');
+
+    if (authToggle) {
+        authToggle.addEventListener('click', (e) => {
+            e.preventDefault();
+            authMode = authMode === 'login' ? 'register' : 'login';
+            const feedback = document.getElementById('auth-feedback');
+            if (feedback) feedback.textContent = '';
+            if (authMode === 'register') {
+                authTitle.textContent = 'Créer un compte';
+                authSubmit.innerHTML = '<i class="fas fa-user-plus"></i> S\'inscrire';
+                authNameGroup.style.display = 'block';
+                authToggleText.textContent = 'Déjà un compte ?';
+                authToggle.textContent = 'Se connecter';
+            } else {
+                authTitle.textContent = 'Connexion';
+                authSubmit.innerHTML = '<i class="fas fa-sign-in-alt"></i> Se connecter';
+                authNameGroup.style.display = 'none';
+                authToggleText.textContent = 'Pas encore de compte ?';
+                authToggle.textContent = 'Créer un compte';
+            }
+        });
+    }
+
+    if (authForm) {
+        authForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const email = document.getElementById('auth-email').value.trim();
+            const password = document.getElementById('auth-password').value;
+            const feedback = document.getElementById('auth-feedback');
+            if (!email || !password) {
+                feedback.textContent = 'Veuillez remplir tous les champs.';
+                return;
+            }
+            try {
+                if (authMode === 'register') {
+                    const res = await fetch('/api/auth/register', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ email, password })
+                    });
+                    const data = await res.json();
+                    if (!res.ok) throw new Error(data.error || 'Erreur lors de l\'inscription.');
+                    feedback.style.color = '#10b981';
+                    feedback.textContent = 'Compte créé ! Connexion en cours...';
+                    const loginRes = await fetch('/api/auth/login', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ email, password })
+                    });
+                    const loginData = await loginRes.json();
+                    if (!loginRes.ok) throw new Error(loginData.error || 'Erreur de connexion.');
+                    localStorage.setItem('jwt_token', loginData.token);
+                    feedback.style.color = '#10b981';
+                    feedback.textContent = 'Connecté !';
+                    hideAuthScreen();
+                    initApp();
+                } else {
+                    const res = await fetch('/api/auth/login', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ email, password })
+                    });
+                    const data = await res.json();
+                    if (!res.ok) throw new Error(data.error || 'Identifiants invalides.');
+                    localStorage.setItem('jwt_token', data.token);
+                    feedback.style.color = '#10b981';
+                    feedback.textContent = 'Connecté !';
+                    hideAuthScreen();
+                    initApp();
+                }
+            } catch (err) {
+                feedback.style.color = '#fca5a5';
+                feedback.textContent = err.message;
+            }
+        });
+    }
+}
+
+function initApp() {
+    initSSE();
+    loadJobs().catch(err => console.error('loadJobs error:', err.message));
+    loadSystemStatus().catch(err => console.error('loadSystemStatus error:', err.message));
 }
 
 function escapeHtml(value = '') {
@@ -33,7 +171,9 @@ function showToast(message, type = 'info') {
 
 function initSSE() {
     if (!window.EventSource) return;
-    const evtSource = new EventSource('/api/events');
+    const token = localStorage.getItem('jwt_token');
+    const sseUrl = token ? `/api/events?token=${encodeURIComponent(token)}` : '/api/events';
+    const evtSource = new EventSource(sseUrl);
     const statusEl = document.getElementById('system-status');
 
     evtSource.addEventListener('connected', () => {
@@ -50,7 +190,7 @@ function initSSE() {
             if (typeof loadSystemStatus === 'function') loadSystemStatus();
             if (data.status === 'completed') {
                 showToast('Recherche multi-providers terminée !', 'success');
-                if (typeof loadJobs === 'function') loadJobs();
+                if (typeof loadJobs === 'function') loadJobs().catch(() => {});
             } else if (data.status === 'failed') {
                 showToast('Erreur dans un workflow de recherche.', 'error');
             } else if (data.status === 'queued') {
@@ -62,15 +202,15 @@ function initSSE() {
     });
 
     evtSource.addEventListener('job_updated', () => {
-        if (typeof loadJobs === 'function') loadJobs();
+        if (typeof loadJobs === 'function') loadJobs().catch(() => {});
     });
 
     evtSource.addEventListener('job_deleted', () => {
-        if (typeof loadJobs === 'function') loadJobs();
+        if (typeof loadJobs === 'function') loadJobs().catch(() => {});
     });
 
     evtSource.addEventListener('jobs_refreshed', () => {
-        if (typeof loadJobs === 'function') loadJobs();
+        if (typeof loadJobs === 'function') loadJobs().catch(() => {});
     });
 
     evtSource.onerror = () => {
@@ -82,7 +222,7 @@ function initSSE() {
 }
 
 document.addEventListener('DOMContentLoaded', () => {
-    initSSE();
+    initAuth();
 });
 
 // Tab Management
@@ -94,7 +234,7 @@ document.querySelectorAll('.nav-item').forEach(btn => {
         btn.classList.add('active');
         document.getElementById(btn.dataset.tab).classList.add('active');
         
-        if (btn.dataset.tab === 'dashboard') loadJobs();
+        if (btn.dataset.tab === 'dashboard') loadJobs().catch(err => console.error('loadJobs error:', err.message));
         if (btn.dataset.tab === 'search') loadSearchRuns();
         if (btn.dataset.tab === 'configs') loadConfigs();
         if (btn.dataset.tab === 'providers') loadProviders();
@@ -169,9 +309,9 @@ async function loadJobs() {
                 ${job.error ? `<div class="job-error-msg" style="color: #fca5a5; font-size: 0.8rem; margin: 0.5rem 0; padding: 6px; background: rgba(239, 68, 68, 0.15); border-radius: 4px;"><i class="fas fa-exclamation-triangle"></i> ${escapeHtml(job.error)}</div>` : ''}
                 
                 <div class="actions" style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-top: auto;">
-                    <a href="/api/jobs/${job.id}/pdf" target="_blank" class="btn-outline" title="Télécharger la lettre PDF">
+                    <button onclick="downloadPdf(${job.id})" class="btn-outline" title="Télécharger la lettre PDF">
                         <i class="fas fa-file-pdf"></i> Lettre PDF
-                    </a>
+                    </button>
                     <a href="${escapeHtml(job.link)}" target="_blank" class="btn-outline" title="Ouvrir le lien de l'offre">
                         <i class="fas fa-external-link-alt"></i> Offre
                     </a>
@@ -265,6 +405,44 @@ async function applyJob(id, btn) {
             btn.innerHTML = oldHtml;
         }
     }
+}
+
+async function downloadPdf(jobId) {
+    const token = localStorage.getItem('jwt_token');
+    if (!token) {
+        showAuthScreen();
+        return;
+    }
+    try {
+        const response = await fetch(`/api/jobs/${jobId}/pdf`, {
+            headers: { 'Authorization': `Bearer ${token}` }
+        });
+        if (response.status === 401 || response.status === 403) {
+            localStorage.removeItem('jwt_token');
+            showAuthScreen();
+            return;
+        }
+        if (!response.ok) {
+            const data = await response.json().catch(() => ({}));
+            throw new Error(data.error || 'PDF introuvable.');
+        }
+        const blob = await response.blob();
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `lettre-${jobId}.pdf`;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        URL.revokeObjectURL(url);
+    } catch (e) {
+        alert(e.message || 'Impossible de télécharger le PDF.');
+    }
+}
+
+function logout() {
+    localStorage.removeItem('jwt_token');
+    showAuthScreen();
 }
 
 // Providers Management
@@ -539,9 +717,6 @@ document.getElementById('btn-save-config')?.addEventListener('click', async () =
     }
 });
 
-// Init
-loadJobs();
-
 // === SCHEDULER (Recherches planifiées) ===
 
 const CRON_LABELS = {
@@ -672,4 +847,3 @@ document.getElementById('sched-cron-presets')?.addEventListener('change', () => 
 });
 
 document.getElementById('sched-frequency')?.dispatchEvent(new Event('change'));
-loadSystemStatus();

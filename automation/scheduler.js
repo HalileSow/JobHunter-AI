@@ -139,7 +139,9 @@ async function tick() {
                 finished_at: db.fn.now(),
                 raw_jobs_count: result.rawJobsFound || 0,
                 unique_jobs_count: result.uniqueJobsFound || 0,
-                saved_jobs_count: result.jobsSaved || 0
+                analyzed_jobs_count: result.jobsAnalyzed || 0,
+                saved_jobs_count: result.jobsSaved || 0,
+                duplicate_jobs_count: result.duplicateJobsSkipped || 0
             });
 
             // 4. Mise à jour du schedule
@@ -174,6 +176,11 @@ let schedulerInterval = null;
 export function startScheduler() {
     if (schedulerInterval) return;
     console.log('🕐 [Scheduler] Planificateur de recherches automatiques démarré (vérification chaque minute).');
+    
+    // Exécution immédiate au démarrage
+    tick().catch((err) => console.error(`❌ [Scheduler] Erreur initiale : ${err.message}`));
+    
+    // Puis vérification chaque minute
     schedulerInterval = setInterval(() => {
         tick().catch((err) => console.error(`❌ [Scheduler] Erreur : ${err.message}`));
     }, 60_000);

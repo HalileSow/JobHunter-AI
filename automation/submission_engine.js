@@ -22,14 +22,15 @@ async function resolveApplicationDocuments(job, profile, { lang = 'fr', outputDi
     const selectedCv = job.selected_cv_id ? await getCvById(job.selected_cv_id) : null;
     const fallbackCvPath = selectedCv?.path || await getActiveCvPath();
 
+    // Si aucun CV disponible, on continue quand même (la lettre de motivation sera utilisée)
     if (!fallbackCvPath) {
-        throw new Error(`Aucun CV disponible pour l'offre #${job.id}.`);
+        console.log(`⚠️ Aucun CV disponible pour l'offre #${job.id}. Préparation du dossier sans CV.`);
     }
 
     const docs = await buildApplicationDocuments({
         job,
         profile,
-        selectedCvPath: fallbackCvPath,
+        selectedCvPath: fallbackCvPath || null,
         letterText: job.letter || '',
         letterPath: job.pdf_path || null,
         lang,

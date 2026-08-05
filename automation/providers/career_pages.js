@@ -1,7 +1,7 @@
 import fs from 'fs/promises';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { chromium } from 'playwright';
+import { getBrowser, releaseBrowser, createBrowserContext } from '../browser_pool.js';
 import { callGemini } from '../ai_engine.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -23,38 +23,46 @@ export async function searchJobs(country, jobTitle, keywords) {
         return [];
     }
 
-    const browser = await chromium.launch({ headless: true });
-    const context = await browser.newContext({
-        userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36'
-    });
-    const page = await context.newPage();
+    // OPTIMISATION MÉMOIRE : Utiliser le pool de browsers
+    let lock = null;
+    let context = null;
+    let page = null;
     const results = [];
 
-    const query = `${jobTitle} ${keywords}`;
+    try {
+        const browserResult = await getBrowser();
+        const browser = browserResult.browser;
+        lock = browserResult.lock;
+        
+        context = await createBrowserContext(browser);
+        page = await context.newPage();
 
-    for (const cp of careerPages) {
-        const searchUrl = cp.url.replace('{query}', encodeURIComponent(query));
-        console.log(`🌐 Chargement de la page carrières de ${cp.company} : ${searchUrl}`);
+        const query = `${jobTitle} ${keywords}`;
 
-        try {
-            await page.goto(searchUrl, { waitUntil: 'domcontentloaded', timeout: 30000 });
-            await page.evaluate(() => window.scrollBy(0, window.innerHeight / 2));
-            await page.waitForTimeout(2000);
+        for (const cp of careerPages) {
+            const searchUrl = cp.url.replace('{query}', encodeURIComponent(query));
+            console.log(`🌐 Chargement de la page carrières de ${cp.company} : ${searchUrl}`);
 
-            // Récupérer le contenu de la page sous forme textuelle
-            const bodyText = await page.innerText('body');
-            
-            // Si la page est trop courte ou contient une erreur évidente
-            if (bodyText.length < 200) {
-                console.log(`⚠️ Contenu trop court pour ${cp.company}.`);
-                continue;
-            }
+            try {
+                await page.goto(searchUrl, { waitUntil: 'domcontentloaded', timeout: 30000 });
+                await page.evaluate(() => window.scrollBy(0, window.innerHeight / 2));
+                await page.waitForTimeout(2000);
 
-            console.log(`🤖 IA analyse la page carrières de ${cp.company}...`);
-            const prompt = `Tu es un assistant de recrutement.
+                // Récupérer le contenu de la page sous forme textuelle
+                // OPTIMISATION MÉMOIRE : Limiter à 4000 caractères pour réduire la mémoire
+                const bodyText = await page.innerText('body');
+
+                // Si la page est trop courte ou contient une erreur évidente
+                if (bodyText.length < 200) {
+                    console.log(`⚠️ Contenu trop court pour ${cp.company}.`);
+                    continue;
+                }
+
+                console.log(`🤖 IA analyse la page carrières de ${cp.company}...`);
+                const prompt = `Tu es un assistant de recrutement.
 Voici le contenu texte brut de la page carrières de l'entreprise "${cp.company}" :
 ---
-${bodyText.substring(0, 10000)} // Limite à 10k caractères pour le contexte
+${bodyText.substring(0, 4000)}
 ---
 
 Extrais de ce texte une liste de jusqu'à 5 offres d'emploi correspondant le mieux au poste : "${jobTitle}" avec les mots-clés "${keywords}".
@@ -81,22 +89,29 @@ Réponds UNIQUEMENT avec un tableau JSON valide au format suivant :
 ]
 Si aucune offre ne correspond, retourne un tableau vide : []`;
 
-            const aiResponse = await callGemini(prompt);
-            try {
-                const parsedJobs = JSON.parse(aiResponse);
-                if (Array.isArray(parsedJobs)) {
-                    console.log(`✅ ${parsedJobs.length} offres extraites par IA pour ${cp.company}`);
-                    results.push(...parsedJobs);
+                const aiResponse = await callGemini(prompt);
+                try {
+                    const parsedJobs = JSON.parse(aiResponse);
+                    if (Array.isArray(parsedJobs)) {
+                        console.log(`✅ ${parsedJobs.length} offres extraites par IA pour ${cp.company}`);
+                        results.push(...parsedJobs);
+                    }
+                } catch (err) {
+                    console.warn(`⚠️ Échec de l'analyse JSON par l'IA pour ${cp.company} :`, err.message);
                 }
-            } catch (err) {
-                console.warn(`⚠️ Échec de l'analyse JSON par l'IA pour ${cp.company} :`, err.message);
-            }
 
-        } catch (err) {
-            console.error(`❌ Erreur lors du chargement de la page de ${cp.company} :`, err.message);
+            } catch (err) {
+                console.error(`❌ Erreur lors du chargement de la page de ${cp.company} :`, err.message);
+            }
         }
+    } catch (err) {
+        console.error(`❌ Erreur Playwright CareerPages:`, err.message);
+    } finally {
+        // OPTIMISATION MÉMOIRE : Fermer le context et libérer le lock
+        if (page) await page.close().catch(() => {});
+        if (context) await context.close().catch(() => {});
+        if (lock) releaseBrowser(lock);
     }
 
-    await browser.close();
     return results;
 }

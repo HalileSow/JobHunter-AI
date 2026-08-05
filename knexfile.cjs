@@ -26,10 +26,11 @@ function postgresConfig() {
       ssl: process.env.PG_SSL === 'true' ? { rejectUnauthorized: false } : false
     },
     pool: {
-      min: 2,
-      max: 10,
-      acquireTimeoutMillis: 30000,
-      idleTimeoutMillis: 60000
+      min: 0,
+      max: 2,
+      acquireTimeoutMillis: 15000,
+      idleTimeoutMillis: 30000,
+      reapIntervalMillis: 1000
     },
     useNullAsDefault: true,
     migrations: {

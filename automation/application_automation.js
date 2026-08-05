@@ -1,7 +1,7 @@
 import fs from 'fs/promises';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { chromium } from 'playwright';
+import { getBrowser, releaseBrowser, createBrowserContext } from './browser_pool.js';
 import { exportCvToPdf } from './cv_exporter.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -255,10 +255,9 @@ function detectConfirmationId(text = '') {
 }
 
 export async function automateApplication({ job, profile, tailoredCvPath, letterText, letterPath, providerName = 'generic', timeoutMs = 30000 }) {
-    const browser = await chromium.launch({ headless: true });
-    const page = await browser.newPage({
-        userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36'
-    });
+    let lock = null;
+    let context = null;
+    let page = null;
 
     let result = {
         success: false,
@@ -272,6 +271,15 @@ export async function automateApplication({ job, profile, tailoredCvPath, letter
     };
 
     try {
+        // OPTIMISATION MÉMOIRE : Utiliser le pool de browsers au lieu de lancer une nouvelle instance
+        const browserResult = await getBrowser();
+        const browser = browserResult.browser;
+        lock = browserResult.lock;
+        
+        context = await createBrowserContext(browser);
+        page = await context.newPage({
+            userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36'
+        });
         await page.goto(job.link, { waitUntil: 'domcontentloaded', timeout: timeoutMs });
         await page.waitForTimeout(500);
 
@@ -373,7 +381,9 @@ export async function automateApplication({ job, profile, tailoredCvPath, letter
         };
         return result;
     } finally {
-        await page.close().catch(() => undefined);
-        await browser.close().catch(() => undefined);
+        // OPTIMISATION MÉMOIRE : Fermer le context et libérer le lock, pas le browser
+        if (page) await page.close().catch(() => undefined);
+        if (context) await context.close().catch(() => undefined);
+        if (lock) releaseBrowser(lock);
     }
 }

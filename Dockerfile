@@ -42,4 +42,7 @@ RUN cd automation && npx playwright install --with-deps chromium
 
 EXPOSE 10000
 
+# Limiter la mémoire heap Node.js à 256 Mo (laisse ~200 Mo à Chromium)
+ENV NODE_OPTIONS="--max-old-space-size=256"
+
 CMD ["node", "site/server.mjs"]

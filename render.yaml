@@ -9,6 +9,8 @@ services:
     autoDeploy: true
     healthCheckPath: /api/health
     dockerfilePath: ./Dockerfile
+    # Plan Starter (512 Mo RAM) — suffisant avec les optimisations mémoire
+    plan: starter
     envVars:
       - key: NODE_ENV
         value: production
@@ -20,3 +22,11 @@ services:
         fromDatabase:
           name: jobhunter-ai-db
           property: connectionString
+      # Limiter la mémoire max du processus Node.js (laisser une marge pour Chromium)
+      - key: NODE_OPTIONS
+        value: --max-old-space-size=256
+      # Pool PostgreSQL minimal
+      - key: PG_POOL_MIN
+        value: "0"
+      - key: PG_POOL_MAX
+        value: "2"

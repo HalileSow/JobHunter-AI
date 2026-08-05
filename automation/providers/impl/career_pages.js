@@ -2,7 +2,7 @@ import { BaseProvider } from '../base_provider.js';
 import fs from 'fs/promises';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { chromium } from 'playwright';
+import { getBrowser, releaseBrowser, createBrowserContext } from '../../browser_pool.js';
 import { callGemini } from '../../ai_engine.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -27,7 +27,7 @@ export class CareerPagesProvider extends BaseProvider {
             const data = await fs.readFile(configPath, 'utf-8');
             careerPages = JSON.parse(data);
         } catch (err) {
-            console.warn("⚠️ Impossible de charger config/career_pages.json. Mode sans fichier de config.");
+            console.warn("⚠️ Impossible de charger config/career_pages.json. Utilisation de la config par défaut.");
             careerPages = [
                 { company: "Decathlon", url: "https://recrutement.decathlon.fr/search?q={query}" },
                 { company: "Orange", url: "https://job.orange.com/fr/offres?keyword={query}" }
@@ -35,13 +35,16 @@ export class CareerPagesProvider extends BaseProvider {
         }
 
         let browser = null;
+        let lock = null;
         const results = [];
 
         try {
-            browser = await chromium.launch({ headless: true });
-            const context = await browser.newContext({
-                userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36'
-            });
+            // OPTIMISATION MÉMOIRE : Utiliser le pool de browsers au lieu de lancer une nouvelle instance
+            const browserResult = await getBrowser();
+            browser = browserResult.browser;
+            lock = browserResult.lock;
+            
+            const context = await createBrowserContext(browser);
             const page = await context.newPage();
 
             const query = `${jobTitle} ${keywords}`.trim();
@@ -55,8 +58,11 @@ export class CareerPagesProvider extends BaseProvider {
                     await page.evaluate(() => window.scrollBy(0, window.innerHeight / 2));
                     await page.waitForTimeout(1500);
 
+                    // OPTIMISATION MÉMOIRE : Limiter la taille du texte extrait à 4000 caractères
+                    // pour réduire la mémoire utilisée par les prompts IA
                     const bodyText = await page.innerText('body');
                     if (bodyText.length < 150) continue;
+                    const truncatedText = bodyText.substring(0, 4000);
 
                     const filters = [
                         city ? `ville="${city}"` : '',
@@ -68,7 +74,7 @@ export class CareerPagesProvider extends BaseProvider {
                     const prompt = `Tu es un assistant de recrutement.
 Voici le contenu texte brut du site carrières de l'entreprise "${cp.company}" :
 ---
-${bodyText.substring(0, 8000)}
+${truncatedText}
 ---
 Extrais jusqu'à 3 offres d'emploi qui correspondent au poste "${jobTitle}" / mots-clés "${keywords}"${filters ? `. Filtres supplémentaires : ${filters}` : ''}.
 Format JSON strict :
@@ -103,10 +109,14 @@ Si aucune offre pertinente, réponds avec [].`;
                     console.error(`❌ Erreur site carrières ${cp.company}:`, err.message);
                 }
             }
+            
+            // Fermer le context mais pas le browser (il est réutilisé)
+            await context.close().catch(() => {});
         } catch (err) {
             console.error(`❌ Erreur Playwright CareerPages:`, err.message);
         } finally {
-            if (browser) await browser.close();
+            // OPTIMISATION MÉMOIRE : Libérer le lock du pool, pas fermer le browser
+            if (lock) releaseBrowser(lock);
         }
 
         return results.slice(0, limit);

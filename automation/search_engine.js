@@ -234,6 +234,10 @@ export function applySearchFilters(jobs, { city, experienceLevel, contractType, 
 
 /**
  * Exécute la recherche multi-providers en parallèle et retourne la liste dédoublonnée.
+ * 
+ * OPTIMISATION MÉMOIRE : Les providers sont exécutés séquentiellement (CONCURRENCY_LIMIT = 1)
+ * car chaque provider peut lancer une instance Playwright/Chromium qui consomme 150-300 Mo RAM.
+ * Sur Render Starter (512 Mo), lancer plusieurs browsers en parallèle provoque un OOM kill.
  */
 export async function executeMultiProviderSearch({ country, jobTitle, keywords = '', city = '', experienceLevel = '', contractType = '', remote = '', jobType = '', salary = '', minSalary = '', maxSalary = '', selectedProviderIds = [], limit = 30 }) {
     let providersToUse = [];
@@ -251,14 +255,19 @@ export async function executeMultiProviderSearch({ country, jobTitle, keywords =
         providersToUse = defaultRegistry.getAll().filter(p => p.enabled);
     }
 
-    console.log(`🌐 Recherche en parallèle sur ${providersToUse.length} provider(s) : ${providersToUse.map(p => p.name).join(', ')}...`);
+    console.log(`🌐 Recherche séquentielle sur ${providersToUse.length} provider(s) : ${providersToUse.map(p => p.name).join(', ')}...`);
     console.log(`📋 Filtres : pays=${country}, ville=${city || '—'}, expérience=${experienceLevel || '—'}, contrat=${contractType || '—'}, remote=${remote || '—'}, type=${jobType || '—'}, salaire=${salary || minSalary || maxSalary || '—'}`);
 
     const timeoutMs = 30000;
 
+    // OPTIMISATION MÉMOIRE : Exécution séquentielle (1 provider à la fois)
+    // pour éviter de lancer plusieurs instances Chromium en parallèle.
+    const CONCURRENCY_LIMIT = 1;
+
     const searchParams = { country, jobTitle, keywords, city, experienceLevel, contractType, remote, jobType, salary, minSalary, maxSalary, limit };
 
-    const providerPromises = providersToUse.map(provider => {
+    // Découper les providers en lots de CONCURRENCY_LIMIT maximum
+    const executeProviderWithTimeout = (provider) => {
         return Promise.race([
             provider.searchJobs(searchParams),
             new Promise((_, reject) => setTimeout(() => reject(new Error(`Timeout provider ${provider.name}`)), timeoutMs))
@@ -266,10 +275,20 @@ export async function executeMultiProviderSearch({ country, jobTitle, keywords =
             console.error(`❌ Échec ou timeout sur ${provider.name} : ${err.message}`);
             return [];
         });
-    });
+    };
 
-    const resultsArray = await Promise.all(providerPromises);
-    const rawJobs = resultsArray.flat();
+    const rawJobs = [];
+    for (let i = 0; i < providersToUse.length; i += CONCURRENCY_LIMIT) {
+        const batch = providersToUse.slice(i, i + CONCURRENCY_LIMIT);
+        console.log(`🔁 Lot ${Math.floor(i / CONCURRENCY_LIMIT) + 1}/${Math.ceil(providersToUse.length / CONCURRENCY_LIMIT)} : ${batch.map(p => p.name).join(', ')}`);
+        const batchResults = await Promise.all(batch.map(executeProviderWithTimeout));
+        rawJobs.push(...batchResults.flat());
+        
+        // Petit délai entre les providers pour laisser le GC récupérer la mémoire
+        if (i + CONCURRENCY_LIMIT < providersToUse.length) {
+            await new Promise(resolve => setTimeout(resolve, 500));
+        }
+    }
 
     console.log(`📊 Brut d'offres récupérées : ${rawJobs.length}`);
 
@@ -315,21 +334,34 @@ export async function runFullJobHunterSearch({ country, jobTitle, keywords = '',
     }
 
     // 2. Charger les CVs disponibles (optionnel)
+    // OPTIMISATION MÉMOIRE : Limiter à 2 CVs max pour éviter de saturer la RAM
+    const MAX_CVS_IN_MEMORY = 2;
     const allCvs = await getAllCvs();
     let cvsWithContent = [];
-    
+
     if (allCvs.length === 0) {
         console.log(`⚠️ Aucun CV disponible dans la base de données. Les offres seront sauvegardées avec un score par défaut.`);
     } else {
-        cvsWithContent = await Promise.all(allCvs.map(async cv => {
+        // Ne charger que les MAX_CVS_IN_MEMORY premiers CVs actifs
+        const cvsToLoad = allCvs.slice(0, MAX_CVS_IN_MEMORY);
+        cvsWithContent = await Promise.all(cvsToLoad.map(async cv => {
             const content = await fs.readFile(cv.path, 'utf-8');
             return { ...cv, content };
         }));
+        if (allCvs.length > MAX_CVS_IN_MEMORY) {
+            console.log(`⚠️ ${allCvs.length} CVs trouvés, seulement ${MAX_CVS_IN_MEMORY} chargés en mémoire (optimisation RAM).`);
+        }
     }
 
     const processedJobs = [];
     let analyzedCount = 0;
     let duplicateJobsSkipped = 0;
+
+    // Limiter le nombre d'offres traitées par l'IA pour éviter
+    // l'épuisement mémoire. Au-delà, les offres sont sauvegardées
+    // avec un score par défaut sans analyse IA.
+    const MAX_AI_ANALYSIS = 15;
+    let aiAnalysisCount = 0;
 
     // 3. Traitement et classification par IA
     for (const job of uniqueJobs) {
@@ -343,7 +375,14 @@ export async function runFullJobHunterSearch({ country, jobTitle, keywords = '',
             continue;
         }
 
-        console.log(`📝 Analyse & Scoring IA pour : ${job.title} chez ${job.company}`);
+        // Limiter les analyses IA coûteuses en mémoire (max 15 analyses par run)
+        const skipAiAnalysis = aiAnalysisCount >= MAX_AI_ANALYSIS && cvsWithContent.length > 0;
+        if (skipAiAnalysis) {
+            console.log(`⏩ Limite d'analyses IA atteinte (${MAX_AI_ANALYSIS}), score par défaut pour : ${job.title} chez ${job.company}`);
+        } else {
+            aiAnalysisCount++;
+            console.log(`📝 Analyse & Scoring IA pour : ${job.title} chez ${job.company}`);
+        }
         const offerText = `Titre: ${job.title}\nEntreprise: ${job.company}\nLieu: ${job.location || country}\nLien: ${job.link}\nSources: ${(job.providers_list || []).join(', ')}\nDescription: ${job.description || 'Description non fournie.'}`;
 
         try {
@@ -354,11 +393,15 @@ export async function runFullJobHunterSearch({ country, jobTitle, keywords = '',
             let pdfPath = null;
             
             // Si aucun CV disponible, utiliser un score par défaut
-            if (cvsWithContent.length === 0) {
+            if (cvsWithContent.length === 0 || skipAiAnalysis) {
                 aiResult = {
                     score: 50,
-                    letter: 'Lettre de motivation non générée (aucun CV disponible).',
-                    analysis: 'Analyse simplifiée sans CV de référence.'
+                    letter: skipAiAnalysis
+                        ? 'Analyse IA non réalisée (limite mémoire atteinte).'
+                        : 'Lettre de motivation non générée (aucun CV disponible).',
+                    analysis: skipAiAnalysis
+                        ? 'Analyse différée par manque de ressources.'
+                        : 'Analyse simplifiée sans CV de référence.'
                 };
             } else {
                 // A. Sélection du CV idéal

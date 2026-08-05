@@ -170,23 +170,30 @@ async function tick() {
 
 /**
  * Démarre le planificateur intégré. Vérifie chaque minute.
+ * Protégé contre le chevauchement des ticks : si un tick est déjà en cours,
+ * le suivant est ignoré plutôt que lancé en parallèle.
+ * 
+ * OPTIMISATION MÉMOIRE : Intervalle minimum de 5 minutes entre les recherches
+ * pour éviter de saturer la mémoire avec des exécutions trop rapprochées.
  */
 let schedulerInterval = null;
+let backupInterval = null;
+let tickInProgress = false;
+let lastSearchRunTime = 0;
+const MIN_SEARCH_INTERVAL_MS = 5 * 60 * 1000; // 5 minutes minimum entre les recherches
 
 export function startScheduler() {
     if (schedulerInterval) return;
-    console.log('🕐 [Scheduler] Planificateur de recherches automatiques démarré (vérification chaque minute).');
-    
+    console.log('🕐 [Scheduler] Planificateur de recherches automatiques démarré (vérification chaque minute, intervalle min 5min entre recherches).');
+
     // Exécution immédiate au démarrage
-    tick().catch((err) => console.error(`❌ [Scheduler] Erreur initiale : ${err.message}`));
-    
-    // Puis vérification chaque minute
-    schedulerInterval = setInterval(() => {
-        tick().catch((err) => console.error(`❌ [Scheduler] Erreur : ${err.message}`));
-    }, 60_000);
+    safeTick();
+
+    // Puis vérification chaque minute (mais jamais en parallèle, avec intervalle minimum)
+    schedulerInterval = setInterval(() => safeTick(), 60_000);
 
     // Sauvegarde automatique toutes les 12h
-    setInterval(() => {
+    backupInterval = setInterval(() => {
         backupDatabase().then((res) => {
             console.log(`💾 [Scheduler] Sauvegarde auto : ${res.backupFileName}`);
         }).catch((err) => {
@@ -195,12 +202,41 @@ export function startScheduler() {
     }, 12 * 60 * 60 * 1000);
 }
 
+function safeTick() {
+    if (tickInProgress) {
+        console.log('⏭️ [Scheduler] Tick précédent encore en cours, report du suivant.');
+        return;
+    }
+    
+    // OPTIMISATION MÉMOIRE : Vérifier l'intervalle minimum entre les recherches
+    const now = Date.now();
+    if (now - lastSearchRunTime < MIN_SEARCH_INTERVAL_MS && lastSearchRunTime > 0) {
+        // Pas de recherche, mais on peut faire le tick pour d'autres tâches futures
+        tickInProgress = true;
+        Promise.resolve().finally(() => {
+            tickInProgress = false;
+        });
+        return;
+    }
+    
+    tickInProgress = true;
+    lastSearchRunTime = now;
+    tick().catch((err) => console.error(`❌ [Scheduler] Erreur : ${err.message}`))
+        .finally(() => {
+            tickInProgress = false;
+        });
+}
+
 export function stopScheduler() {
     if (schedulerInterval) {
         clearInterval(schedulerInterval);
         schedulerInterval = null;
-        console.log('🛑 [Scheduler] Planificateur arrêté.');
     }
+    if (backupInterval) {
+        clearInterval(backupInterval);
+        backupInterval = null;
+    }
+    console.log('🛑 [Scheduler] Planificateur arrêté.');
 }
 
 export { matchesCron, computeNextRun, tick };

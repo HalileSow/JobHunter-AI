@@ -8,7 +8,8 @@ import { initDb } from '../automation/db.js';
 import { submitJob, confirmUserSubmission } from '../automation/submission_engine.js';
 import { defaultRegistry } from '../automation/providers/registry.js';
 import { backupDatabase } from '../automation/backup_db.js';
-import { startScheduler } from '../automation/scheduler.js';
+import { startScheduler, stopScheduler } from '../automation/scheduler.js';
+import { closeBrowser } from '../automation/browser_pool.js';
 import { launchSearchRun } from '../automation/search_run_launcher.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -81,6 +82,8 @@ function createApp() {
     app.use(express.static(__dirname));
 
     let sseClients = [];
+    const MAX_SSE_CLIENTS = 10; // OPTIMISATION MÉMOIRE : Limite max de clients SSE
+    const SSE_TIMEOUT_MS = 30 * 60 * 1000; // 30 minutes timeout
 
     function broadcast(event, data = {}) {
         const payload = `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`;
@@ -94,17 +97,23 @@ function createApp() {
     }
 
     app.get('/api/events', (req, res) => {
+        // OPTIMISATION MÉMOIRE : Limiter le nombre de clients SSE
+        if (sseClients.length >= MAX_SSE_CLIENTS) {
+            console.warn(`⚠️ [SSE] Limite de ${MAX_SSE_CLIENTS} clients atteinte, refus de nouvelle connexion`);
+            return res.status(503).json({ error: 'Trop de connexions actives.' });
+        }
+
         // Authentification optionnelle pour SSE (via header ou query param)
         const authHeader = req.headers['authorization'];
         let token = authHeader && authHeader.split(' ')[1];
-        
+
         // Fallback: token via query parameter (pour EventSource qui ne supporte pas les headers)
         if (!token && req.query.token) {
             token = req.query.token;
         }
-        
+
         let authenticated = false;
-        
+
         if (token) {
             try {
                 jwt.verify(token, JWT_SECRET);
@@ -113,19 +122,29 @@ function createApp() {
                 // Client non authentifié, on continue quand même
             }
         }
-        
+
         res.setHeader('Content-Type', 'text/event-stream');
         res.setHeader('Cache-Control', 'no-cache');
         res.setHeader('Connection', 'keep-alive');
         res.flushHeaders();
 
         const clientId = Date.now() + Math.random();
-        const newClient = { id: clientId, res, authenticated };
+        const newClient = { id: clientId, res, authenticated, createdAt: Date.now() };
         sseClients.push(newClient);
+
+        // OPTIMISATION MÉMOIRE : Timeout automatique pour éviter les connexions orphelines
+        const timeout = setTimeout(() => {
+            console.log(`🔌 [SSE] Timeout client ${clientId}, fermeture`);
+            try {
+                res.end();
+            } catch {}
+            sseClients = sseClients.filter((c) => c.id !== clientId);
+        }, SSE_TIMEOUT_MS);
 
         res.write(`event: connected\ndata: ${JSON.stringify({ status: 'connected', clientId, authenticated })}\n\n`);
 
         req.on('close', () => {
+            clearTimeout(timeout);
             sseClients = sseClients.filter((c) => c.id !== clientId);
         });
     });
@@ -665,12 +684,44 @@ const app = createApp();
 
 if (path.resolve(process.argv[1] || '') === fileURLToPath(import.meta.url)) {
     initDb().then(() => {
-        app.listen(port, '0.0.0.0', () => {
+        const server = app.listen(port, '0.0.0.0', () => {
             console.log(`🚀 JobHunter-AI disponible sur http://localhost:${port}`);
             startScheduler();
         });
+
+        // Arrêt gracieux : fermer proprement les connexions et le scheduler
+        const gracefulShutdown = async (signal) => {
+            console.log(`\n⚠️ Signal ${signal} reçu. Arrêt gracieux en cours...`);
+
+            stopScheduler();
+
+            // OPTIMISATION MÉMOIRE : Fermer le browser pool pour libérer la mémoire Chromium
+            await closeBrowser();
+
+            // Fermer le serveur HTTP (arrête d'accepter les nouvelles connexions)
+            await new Promise((resolve) => server.close(resolve));
+
+            // Fermer le pool de connexions Knex
+            const { db } = await import('../automation/db.js');
+            await db.destroy();
+
+            console.log('✅ Arrêt terminé. À bientôt !');
+            process.exit(0);
+        };
+
+        process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
+        process.on('SIGINT', () => gracefulShutdown('SIGINT'));
+
+        // Éviter que le processus ne reste bloqué si les handlers plantent
+        process.on('uncaughtException', (err) => {
+            console.error('❌ Exception non capturée:', err.message);
+            gracefulShutdown('uncaughtException');
+        });
+        process.on('unhandledRejection', (reason) => {
+            console.error('❌ Rejet de promesse non capturé:', reason);
+        });
     }).catch((error) => {
-        console.error(`Impossible d’initialiser JobHunter-AI : ${error.message}`);
+        console.error(`Impossible d'initialiser JobHunter-AI : ${error.message}`);
         process.exitCode = 1;
     });
 }

@@ -85,25 +85,44 @@ function releaseBrowserLock(lock) {
 /**
  * Récupère ou crée l'instance browser singleton.
  * Retourne aussi un lock qui doit être libéré après usage.
+ * Inclut un retry mechanism pour gérer les crashes inattendus.
  */
 export async function getBrowser() {
     const lock = await acquireBrowserLock();
-    
+
     try {
+        // Vérifier et recréer le browser si nécessaire
         if (!browserInstance || !browserInstance.isConnected()) {
             console.log('🚀 [BrowserPool] Lancement de Chromium...');
+            
+            // Nettoyer l'ancienne instance si elle existe
+            if (browserInstance) {
+                try {
+                    await browserInstance.close().catch(() => {});
+                } catch (e) {
+                    // Ignore les erreurs de fermeture
+                }
+                browserInstance = null;
+            }
+            
             browserInstance = await chromium.launch({
                 headless: true,
                 args: CHROMIUM_ARGS
             });
-            
+
             // Gestionnaire de fermeture inattendue
             browserInstance.on('disconnected', () => {
                 console.log('🔌 [BrowserPool] Browser déconnecté');
                 browserInstance = null;
             });
         }
-        
+
+        // Vérification finale avant de retourner
+        if (!browserInstance || !browserInstance.isConnected()) {
+            releaseBrowserLock(lock);
+            throw new Error('Browser failed to start or connect');
+        }
+
         return { browser: browserInstance, lock };
     } catch (error) {
         releaseBrowserLock(lock);
@@ -137,15 +156,53 @@ export async function closeBrowser() {
 
 /**
  * Crée un nouveau context avec des options optimisées mémoire.
+ * Vérifie que le browser est toujours connecté avant de créer le context.
  */
 export async function createBrowserContext(browser) {
+    // Vérifier que le browser est toujours connecté
+    if (!browser || !browser.isConnected()) {
+        throw new Error('Browser is not connected. Cannot create context.');
+    }
+    
     return await browser.newContext({
         userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36',
         viewport: { width: 1280, height: 720 },
-        // Désactiver les images pour réduire la mémoire
         bypassCSP: false,
         javaScriptEnabled: true,
-        // Limiter le stockage
         storageState: undefined
     });
+}
+
+/**
+ * Crée une page avec retry automatique en cas de crash du browser.
+ * Si le browser crash entre la création du context et newPage(),
+ * cette fonction réessaie une fois après avoir recréé le browser.
+ */
+export async function createPageWithRetry(browser, lock, maxRetries = 1) {
+    for (let attempt = 0; attempt <= maxRetries; attempt++) {
+        let context = null;
+        try {
+            context = await createBrowserContext(browser);
+            const page = await context.newPage();
+            return { context, page };
+        } catch (error) {
+            // Si le browser a crashé, essayer de le recréer
+            if (attempt < maxRetries && /closed|disconnected|target/i.test(error.message)) {
+                console.warn(`⚠️ [BrowserPool] Browser crashé lors de newPage(), tentative de recréation (${attempt + 1}/${maxRetries})...`);
+                
+                // Fermer le context s'il a été créé
+                if (context) await context.close().catch(() => {});
+                
+                // Libérer et réacquérir le lock pour recréer le browser
+                releaseBrowserLock(lock);
+                const newResult = await getBrowser();
+                browser = newResult.browser;
+                lock = newResult.lock;
+            } else {
+                // Fermer le context en cas d'erreur finale
+                if (context) await context.close().catch(() => {});
+                throw error;
+            }
+        }
+    }
 }

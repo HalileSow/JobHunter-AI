@@ -1,4 +1,4 @@
-import { getBrowser, releaseBrowser, createBrowserContext } from './browser_pool.js';
+import { getBrowser, releaseBrowser, createPageWithRetry } from './browser_pool.js';
 
 /**
  * Scrape des offres d'emploi en simulant un vrai navigateur.
@@ -16,13 +16,14 @@ export async function browserScrape(url, selector, titleSelector, companySelecto
   let page = null;
 
   try {
-    // OPTIMISATION MÉMOIRE : Utiliser le pool de browsers
+    // OPTIMISATION MÉMOIRE : Utiliser le pool de browsers avec retry automatique
     const browserResult = await getBrowser();
     const browser = browserResult.browser;
     lock = browserResult.lock;
-    
-    context = await createBrowserContext(browser);
-    page = await context.newPage();
+
+    const pageResult = await createPageWithRetry(browser, lock);
+    context = pageResult.context;
+    page = pageResult.page;
 
     console.log(`🌐 Navigation vers : ${url}...`);
     await page.goto(url, {

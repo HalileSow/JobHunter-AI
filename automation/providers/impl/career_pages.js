@@ -2,7 +2,7 @@ import { BaseProvider } from '../base_provider.js';
 import fs from 'fs/promises';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { getBrowser, releaseBrowser, createBrowserContext } from '../../browser_pool.js';
+import { getBrowser, releaseBrowser, createPageWithRetry } from '../../browser_pool.js';
 import { callGemini } from '../../ai_engine.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -36,16 +36,19 @@ export class CareerPagesProvider extends BaseProvider {
 
         let browser = null;
         let lock = null;
+        let context = null;
+        let page = null;
         const results = [];
 
         try {
-            // OPTIMISATION MÉMOIRE : Utiliser le pool de browsers au lieu de lancer une nouvelle instance
+            // OPTIMISATION MÉMOIRE : Utiliser le pool de browsers avec retry automatique
             const browserResult = await getBrowser();
             browser = browserResult.browser;
             lock = browserResult.lock;
-            
-            const context = await createBrowserContext(browser);
-            const page = await context.newPage();
+
+            const pageResult = await createPageWithRetry(browser, lock);
+            context = pageResult.context;
+            page = pageResult.page;
 
             const query = `${jobTitle} ${keywords}`.trim();
 
@@ -109,13 +112,12 @@ Si aucune offre pertinente, réponds avec [].`;
                     console.error(`❌ Erreur site carrières ${cp.company}:`, err.message);
                 }
             }
-            
-            // Fermer le context mais pas le browser (il est réutilisé)
-            await context.close().catch(() => {});
         } catch (err) {
             console.error(`❌ Erreur Playwright CareerPages:`, err.message);
         } finally {
-            // OPTIMISATION MÉMOIRE : Libérer le lock du pool, pas fermer le browser
+            // OPTIMISATION MÉMOIRE : Fermer le context et libérer le lock
+            if (page) await page.close().catch(() => {});
+            if (context) await context.close().catch(() => {});
             if (lock) releaseBrowser(lock);
         }
 

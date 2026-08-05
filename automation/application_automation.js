@@ -1,7 +1,7 @@
 import fs from 'fs/promises';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { getBrowser, releaseBrowser, createBrowserContext } from './browser_pool.js';
+import { getBrowser, releaseBrowser, createPageWithRetry } from './browser_pool.js';
 import { exportCvToPdf } from './cv_exporter.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -271,15 +271,14 @@ export async function automateApplication({ job, profile, tailoredCvPath, letter
     };
 
     try {
-        // OPTIMISATION MÉMOIRE : Utiliser le pool de browsers au lieu de lancer une nouvelle instance
+        // OPTIMISATION MÉMOIRE : Utiliser le pool de browsers avec retry automatique
         const browserResult = await getBrowser();
         const browser = browserResult.browser;
         lock = browserResult.lock;
-        
-        context = await createBrowserContext(browser);
-        page = await context.newPage({
-            userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36'
-        });
+
+        const pageResult = await createPageWithRetry(browser, lock);
+        context = pageResult.context;
+        page = pageResult.page;
         await page.goto(job.link, { waitUntil: 'domcontentloaded', timeout: timeoutMs });
         await page.waitForTimeout(500);
 

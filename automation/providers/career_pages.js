@@ -1,7 +1,7 @@
 import fs from 'fs/promises';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { getBrowser, releaseBrowser, createBrowserContext } from '../browser_pool.js';
+import { getBrowser, releaseBrowser, createPageWithRetry } from '../browser_pool.js';
 import { callGemini } from '../ai_engine.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -23,7 +23,7 @@ export async function searchJobs(country, jobTitle, keywords) {
         return [];
     }
 
-    // OPTIMISATION MÉMOIRE : Utiliser le pool de browsers
+    // OPTIMISATION MÉMOIRE : Utiliser le pool de browsers avec retry automatique
     let lock = null;
     let context = null;
     let page = null;
@@ -33,9 +33,10 @@ export async function searchJobs(country, jobTitle, keywords) {
         const browserResult = await getBrowser();
         const browser = browserResult.browser;
         lock = browserResult.lock;
-        
-        context = await createBrowserContext(browser);
-        page = await context.newPage();
+
+        const pageResult = await createPageWithRetry(browser, lock);
+        context = pageResult.context;
+        page = pageResult.page;
 
         const query = `${jobTitle} ${keywords}`;
 

@@ -68,11 +68,20 @@ function auth(req, res, next) {
     const token = authHeader && authHeader.split(' ')[1];
     if (!token) return res.status(401).json({ error: 'Accès non autorisé.' });
     
-    jwt.verify(token, JWT_SECRET, (err, user) => {
+    jwt.verify(token, JWT_SECRET, (err, decoded) => {
         if (err) return res.status(403).json({ error: 'Token invalide.' });
-        req.user = user;
+        req.user = decoded;
         next();
     });
+}
+
+function authorize(allowedRoles = []) {
+    return (req, res, next) => {
+        if (!req.user || !allowedRoles.includes(req.user.role)) {
+            return res.status(403).json({ error: 'Accès interdit.' });
+        }
+        next();
+    };
 }
 
 function createApp() {
@@ -223,7 +232,10 @@ function createApp() {
             if (!user || !(await bcrypt.compare(password, user.password))) {
                 return res.status(401).json({ error: 'Identifiants invalides.' });
             }
-            const token = jwt.sign({ id: user.id, email: user.email }, JWT_SECRET, { expiresIn: '7d' });
+            if (user.status !== 'ACTIVE') {
+                return res.status(403).json({ error: 'Compte suspendu.' });
+            }
+            const token = jwt.sign({ id: user.id, email: user.email, role: user.role }, JWT_SECRET, { expiresIn: '7d' });
             res.json({ token });
         } catch {
             res.status(500).json({ error: 'Erreur lors de la connexion.' });
@@ -460,11 +472,11 @@ function createApp() {
     });
 
     // Endpoints Jobs
-    app.get('/api/jobs', async (req, res) => {
+    app.get('/api/jobs', auth, async (req, res) => {
         try {
             const { country, city, contract_type, experience_level, remote, status, salary, min_salary, max_salary } = req.query;
             let query = withDb((db) => {
-                let q = db('jobs').select('*');
+                let q = db('jobs').select('*').where({ user_id: req.user.id });
                 if (country) q = q.where('country', country);
                 if (city) q = q.where('city', 'like', `%${city}%`);
                 if (contract_type) q = q.where('contract_type', contract_type);

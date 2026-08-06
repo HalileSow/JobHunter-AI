@@ -874,7 +874,7 @@ function checkAdminRole() {
 
 async function loadAdminUsers() {
     try {
-        const users = await apiCall('/api/admin/users');
+        const users = await api('/admin/users');
         const tbody = document.getElementById('admin-users-list');
         if (!tbody) return;
         
@@ -901,7 +901,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if (btnBackup) {
         btnBackup.addEventListener('click', async () => {
             try {
-                const res = await apiCall('/api/admin/backup', 'POST');
+                const res = await api('/admin/backup', 'POST');
                 showToast(res.message || 'Sauvegarde réussie', 'success');
             } catch (e) {
                 showToast('Erreur lors de la sauvegarde', 'error');

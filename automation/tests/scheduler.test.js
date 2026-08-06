@@ -142,7 +142,8 @@ test('executeScheduledSearchRun persiste les métriques de recherche planifiée'
         title: 'Développeur Node.js',
         keywords: 'Node',
         lang: 'fr',
-        selectedProviderIds: [providerId]
+        selectedProviderIds: [providerId],
+        userId: 1
     });
 
     assert.equal(result.success, true);
@@ -169,7 +170,7 @@ test('executeScheduledSearchRun persiste les métriques de recherche planifiée'
 
     const insertedJobs = await db('jobs').select('id', 'pdf_path');
     assert.equal(insertedJobs.length, 1);
-    await rm(insertedJobs[0].pdf_path, { force: true });
+    if (insertedJobs[0].pdf_path) await rm(insertedJobs[0].pdf_path, { force: true });
 
     const insertedAttempt = await db('application_attempts').count({ count: 'id' }).first();
     assert.equal(Number(insertedAttempt.count), 0);

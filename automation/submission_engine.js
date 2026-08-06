@@ -19,8 +19,8 @@ function normalizeJobStatus(submitResult = {}, fallback = 'Échec') {
 }
 
 async function resolveApplicationDocuments(job, profile, { lang = 'fr', outputDir = null } = {}) {
-    const selectedCv = job.selected_cv_id ? await getCvById(job.selected_cv_id) : null;
-    const fallbackCvPath = selectedCv?.path || await getActiveCvPath();
+    const selectedCv = job.selected_cv_id ? await getCvById(job.user_id, job.selected_cv_id) : null;
+    const fallbackCvPath = selectedCv?.path || await getActiveCvPath(job.user_id);
 
     // Si aucun CV disponible, on continue quand même (la lettre de motivation sera utilisée)
     if (!fallbackCvPath) {
@@ -176,7 +176,7 @@ export async function processJobSubmission(jobId, options = {}) {
             error: err.message
         });
 
-        const selectedCv = job.selected_cv_id ? await getCvById(job.selected_cv_id) : null;
+        const selectedCv = job.selected_cv_id ? await getCvById(job.user_id, job.selected_cv_id) : null;
         await recordApplicationAttempt({
             jobId,
             provider: providerInstance?.id || job.provider || 'unknown',

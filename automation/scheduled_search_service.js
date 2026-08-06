@@ -28,6 +28,7 @@ export async function executeScheduledSearchRun({
     nextRunAt = null,
     country,
     title,
+    userId,
     keywords = '',
     lang = 'fr',
     advancedFilters = {},
@@ -56,7 +57,8 @@ export async function executeScheduledSearchRun({
             minSalary: advancedFilters.minSalary || '',
             maxSalary: advancedFilters.maxSalary || '',
             lang,
-            selectedProviderIds: providerIds
+            selectedProviderIds: providerIds,
+            userId
         });
 
         const completedUpdates = {

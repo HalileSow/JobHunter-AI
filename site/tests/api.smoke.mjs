@@ -18,7 +18,7 @@ try {
     });
     const baseUrl = `http://127.0.0.1:${server.address().port}`;
 
-    // Register and login
+    // === Test 1: Register and login as regular user ===
     const userPayload = { email: 'test@example.com', password: 'password123' };
     const reg = await fetch(`${baseUrl}/api/auth/register`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(userPayload) });
     assert.equal(reg.status, 201);
@@ -28,6 +28,7 @@ try {
     assert(token);
     const headers = { 'content-type': 'application/json', 'authorization': `Bearer ${token}` };
 
+    // === Test 2: Profile ===
     const payload = { first_name: 'Ibrahima', last_name: 'Sow', email: 'ibrahima@example.test', skills: ['Vente', 'Excel'], availability: 'Immédiatement' };
     const save = await fetch(`${baseUrl}/api/profile`, { method: 'PUT', headers, body: JSON.stringify(payload) });
     assert.equal(save.status, 200);
@@ -35,19 +36,39 @@ try {
     assert.equal(read.status, 200);
     const profile = await read.json();
     assert.equal(profile.first_name, 'Ibrahima');
+
+    // === Test 3: System status (public route) ===
     const statusRes = await fetch(`${baseUrl}/api/system/status`);
     assert.equal(statusRes.status, 200);
     const systemStatus = await statusRes.json();
     assert.equal(systemStatus.status, 'healthy');
     assert(typeof systemStatus.activeProviders === 'number');
 
-    const backupRes = await fetch(`${baseUrl}/api/admin/backup`, { method: 'POST', headers });
+    // === Test 4: Admin backup — requires SUPER_ADMIN role ===
+    // Promote the test user to SUPER_ADMIN directly in the DB
+    const { db } = await import('../../automation/db.js');
+    await db('users').where({ email: 'test@example.com' }).update({ role: 'SUPER_ADMIN' });
+
+    // Re-login to get a fresh token with SUPER_ADMIN role
+    const adminLogin = await fetch(`${baseUrl}/api/auth/login`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(userPayload) });
+    assert.equal(adminLogin.status, 200);
+    const { token: adminToken } = await adminLogin.json();
+    const adminHeaders = { 'content-type': 'application/json', 'authorization': `Bearer ${adminToken}` };
+
+    const backupRes = await fetch(`${baseUrl}/api/admin/backup`, { method: 'POST', headers: adminHeaders });
     assert.equal(backupRes.status, 200);
     const backupData = await backupRes.json();
     assert.equal(backupData.success, true);
     assert(backupData.backupFileName);
 
-    console.log('✔ API profil, system/status et backup : enregistrement et lecture validés');
+    // === Test 5: Admin users list ===
+    const usersRes = await fetch(`${baseUrl}/api/admin/users`, { headers: adminHeaders });
+    assert.equal(usersRes.status, 200);
+    const users = await usersRes.json();
+    assert(Array.isArray(users));
+    assert(users.length >= 1);
+
+    console.log('✔ API profil, system/status, backup et admin/users : tous les tests validés');
 } finally {
     const { db } = await import('../../automation/db.js');
     await db.destroy();

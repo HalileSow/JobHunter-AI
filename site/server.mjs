@@ -180,7 +180,7 @@ function createApp() {
                 .orderBy('id', 'desc')
                 .first();
             // Prendre le dernier run (quel que soit son statut) pour l'état actuel
-            const latestSearchRun = await db('search_runs').select('*').where({ user_id: req.user.id }).orderBy('created_at', 'desc').orderBy('id', 'desc').first();
+            const latestSearchRun = await db('search_runs').select('*').orderBy('created_at', 'desc').orderBy('id', 'desc').first();
             return {
                 totalJobs: Number(jobsCount?.count || 0),
                 totalSearchRuns: Number(runsCount?.count || 0),

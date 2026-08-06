@@ -51,7 +51,8 @@
                 <button class="nav-item" data-tab="providers"><i class="fas fa-plug"></i> Sources & Providers</button>
                 <button class="nav-item" data-tab="scheduler"><i class="fas fa-clock"></i> Planificateur</button>
                 <button class="nav-item" data-tab="cvs"><i class="fas fa-file-alt"></i> Mes CV</button>
-                <button class="nav-item" data-tab="settings"><i class="fas fa-user-cog"></i> Profil & Paramètres</button>
+                                <button class="nav-item" data-tab="settings"><i class="fas fa-user-cog"></i> Profil & Paramètres</button>
+                <button class="nav-item" id="nav-admin" data-tab="admin" style="display:none; color: #f43f5e;"><i class="fas fa-user-shield"></i> Administration</button>
             </nav>
             <div class="user-profile">
                 <img src="assets/profile.jpg" alt="Profile" onerror="this.src='https://via.placeholder.com/40'">
@@ -405,6 +406,36 @@
                             <button class="btn-primary" type="submit">Enregistrer les données profil</button>
                             <p id="profile-feedback" class="form-feedback" aria-live="polite"></p>
                         </form>
+                    </div>
+                </div>
+            </section>
+        
+            <!-- TAB: ADMIN -->
+            <section id="admin" class="tab-content">
+                <header>
+                    <h1>Tableau de Bord Administrateur</h1>
+                    <p>Gérez les utilisateurs et les actions globales du système.</p>
+                </header>
+                <div class="admin-grid" style="margin-top: 2rem;">
+                    <button id="btn-admin-backup" class="btn-primary" style="margin-bottom: 2rem; background-color: #f43f5e;">
+                        <i class="fas fa-database"></i> Lancer une sauvegarde (Backup)
+                    </button>
+                    <h2>Liste des Utilisateurs</h2>
+                    <div style="overflow-x:auto;">
+                        <table style="width: 100%; text-align: left; border-collapse: collapse; margin-top: 1rem;">
+                            <thead>
+                                <tr style="border-bottom: 1px solid #334155;">
+                                    <th style="padding: 12px;">ID</th>
+                                    <th style="padding: 12px;">Email</th>
+                                    <th style="padding: 12px;">Rôle</th>
+                                    <th style="padding: 12px;">Statut</th>
+                                    <th style="padding: 12px;">Créé le</th>
+                                </tr>
+                            </thead>
+                            <tbody id="admin-users-list">
+                                <!-- Users injected here -->
+                            </tbody>
+                        </table>
                     </div>
                 </div>
             </section>

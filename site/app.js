@@ -847,3 +847,79 @@ document.getElementById('sched-cron-presets')?.addEventListener('change', () => 
 });
 
 document.getElementById('sched-frequency')?.dispatchEvent(new Event('change'));
+
+// ADMIN DASHBOARD LOGIC
+function getJwtPayload(token) {
+    try {
+        const base64Url = token.split('.')[1];
+        const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
+        const jsonPayload = decodeURIComponent(atob(base64).split('').map(function(c) {
+            return '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2);
+        }).join(''));
+        return JSON.parse(jsonPayload);
+    } catch(e) {
+        return null;
+    }
+}
+
+function checkAdminRole() {
+    const token = localStorage.getItem('jwt_token');
+    if (!token) return;
+    const payload = getJwtPayload(token);
+    if (payload && payload.role === 'SUPER_ADMIN') {
+        const navAdmin = document.getElementById('nav-admin');
+        if (navAdmin) navAdmin.style.display = 'block';
+    }
+}
+
+async function loadAdminUsers() {
+    try {
+        const users = await apiCall('/api/admin/users');
+        const tbody = document.getElementById('admin-users-list');
+        if (!tbody) return;
+        
+        tbody.innerHTML = '';
+        users.forEach(u => {
+            const tr = document.createElement('tr');
+            tr.style.borderBottom = '1px solid #334155';
+            tr.innerHTML = `
+                <td style="padding: 12px;">${u.id}</td>
+                <td style="padding: 12px;">${u.email}</td>
+                <td style="padding: 12px;">${u.role}</td>
+                <td style="padding: 12px;">${u.status}</td>
+                <td style="padding: 12px;">${new Date(u.created_at).toLocaleDateString()}</td>
+            `;
+            tbody.appendChild(tr);
+        });
+    } catch (e) {
+        showToast('Erreur chargement utilisateurs (admin)', 'error');
+    }
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+    const btnBackup = document.getElementById('btn-admin-backup');
+    if (btnBackup) {
+        btnBackup.addEventListener('click', async () => {
+            try {
+                const res = await apiCall('/api/admin/backup', 'POST');
+                showToast(res.message || 'Sauvegarde réussie', 'success');
+            } catch (e) {
+                showToast('Erreur lors de la sauvegarde', 'error');
+            }
+        });
+    }
+
+    const navAdmin = document.getElementById('nav-admin');
+    if (navAdmin) {
+        navAdmin.addEventListener('click', () => {
+            loadAdminUsers();
+        });
+    }
+});
+
+// Patch initApp to check admin role
+const oldInitApp = initApp;
+initApp = function() {
+    oldInitApp();
+    checkAdminRole();
+};

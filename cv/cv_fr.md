@@ -9,7 +9,7 @@ Langue : français
 
 ## Profil professionnel
 
-Agent polyvalent motivé, avec 3 ans d'expérience en mercerie. Habitué aux tâches pratiques, à l'organisation du travail et au contact avec la clientèle. Sérieux, disponible et prêt à travailler dans les secteurs de l'agriculture, de la logistique, de l'entretien, de l'hôtellerie ou de la restauration.
+Personne motivée, sérieuse et rigoureuse, avec une expérience dans le commerce et la gestion de stock. Habitué au travail physique, à l'organisation et au contact avec la clientèle. Disponible immédiatement et prêt à travailler en usine, en logistique, en entrepôt, en production, en manutention ou dans tout autre poste nécessitant de la motivation et de l'adaptabilité.
 
 ## Expérience professionnelle
 
@@ -25,14 +25,18 @@ Depuis 3 ans
 
 ## Compétences
 
-- Polyvalence
-- Organisation
-- Sens du service
-- Gestion du stock
-- Accueil client
+- Gestion de stock
+- Sens des responsabilités
 - Travail en équipe
-- Adaptation rapide
-- Rigueur et ponctualité
+- Organisation
+- Préparation de commandes
+- Réception de marchandises
+
+## Objectif professionnel
+
+Obtenir un poste dans une entreprise internationale afin de développer mes compétences, acquérir une expérience professionnelle durable et contribuer activement aux objectifs de l'entreprise.
+
+Secteurs recherchés : Agriculture, logistique, entretien, hôtellerie, restauration, usine, industrie, Informatique, Commerce.
 
 ## Langues
 

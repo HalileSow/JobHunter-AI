@@ -313,7 +313,8 @@ export async function executeMultiProviderSearch({ country, jobTitle, keywords =
  * Moteur complet : Recherche multi-providers, dédoublonnage, sélection du CV, scoring IA,
  * génération de la lettre de motivation PDF, et enregistrement en base de données.
  */
-export async function runFullJobHunterSearch({ country, jobTitle, keywords = '', city = '', experienceLevel = '', contractType = '', remote = '', jobType = '', salary = '', minSalary = '', maxSalary = '', lang = 'fr', selectedProviderIds = [] }) {
+export async function runFullJobHunterSearch({ country, jobTitle, keywords = '', city = '', experienceLevel = '', contractType = '', remote = '', jobType = '', salary = '', minSalary = '', maxSalary = '', lang = 'fr', selectedProviderIds = [], userId }) {
+    if (!userId) throw new Error("userId est requis.");
     const db = await initDb();
 
     // 1. Démarrer la recherche multi-providers avec filtres avancés
@@ -333,52 +334,42 @@ export async function runFullJobHunterSearch({ country, jobTitle, keywords = '',
         };
     }
 
-    // 2. Charger les CVs disponibles (optionnel)
-    // OPTIMISATION MÉMOIRE : Limiter à 2 CVs max pour éviter de saturer la RAM
+    // 2. Charger les CVs disponibles de l'utilisateur
     const MAX_CVS_IN_MEMORY = 2;
-    const allCvs = await getAllCvs();
+    const allCvs = await getAllCvs(userId);
     let cvsWithContent = [];
 
     if (allCvs.length === 0) {
-        console.log(`⚠️ Aucun CV disponible dans la base de données. Les offres seront sauvegardées avec un score par défaut.`);
+        console.log(`⚠️ Aucun CV disponible pour l'utilisateur ${userId}.`);
     } else {
-        // Ne charger que les MAX_CVS_IN_MEMORY premiers CVs actifs
         const cvsToLoad = allCvs.slice(0, MAX_CVS_IN_MEMORY);
         cvsWithContent = await Promise.all(cvsToLoad.map(async cv => {
             const content = await fs.readFile(cv.path, 'utf-8');
             return { ...cv, content };
         }));
-        if (allCvs.length > MAX_CVS_IN_MEMORY) {
-            console.log(`⚠️ ${allCvs.length} CVs trouvés, seulement ${MAX_CVS_IN_MEMORY} chargés en mémoire (optimisation RAM).`);
-        }
     }
 
     const processedJobs = [];
     let analyzedCount = 0;
     let duplicateJobsSkipped = 0;
-
-    // Limiter le nombre d'offres traitées par l'IA pour éviter
-    // l'épuisement mémoire. Au-delà, les offres sont sauvegardées
-    // avec un score par défaut sans analyse IA.
     const MAX_AI_ANALYSIS = 15;
     let aiAnalysisCount = 0;
 
     // 3. Traitement et classification par IA
     for (const job of uniqueJobs) {
-        // Vérifier si ce dedup_hash existe déjà en BDD
-        const existingInDb = await db('jobs').where({ dedup_hash: job.dedup_hash }).first();
+        // Vérifier si ce dedup_hash existe déjà en BDD pour cet utilisateur
+        const existingInDb = await db('jobs').where({ dedup_hash: job.dedup_hash, user_id: userId }).first();
         if (existingInDb) {
-            console.log(`⏩ Offre déjà existante en BDD : ${job.title} chez ${job.company}`);
+            console.log(`⏩ Offre déjà existante en BDD (user ${userId}) : ${job.title} chez ${job.company}`);
             duplicateJobsSkipped += 1;
-            analyzedCount += 1; // Compter comme analysée (déjà en BDD)
+            analyzedCount += 1;
             processedJobs.push(existingInDb);
             continue;
         }
 
-        // Limiter les analyses IA coûteuses en mémoire (max 15 analyses par run)
         const skipAiAnalysis = aiAnalysisCount >= MAX_AI_ANALYSIS && cvsWithContent.length > 0;
         if (skipAiAnalysis) {
-            console.log(`⏩ Limite d'analyses IA atteinte (${MAX_AI_ANALYSIS}), score par défaut pour : ${job.title} chez ${job.company}`);
+            console.log(`⏩ Limite d'analyses IA atteinte, score par défaut pour : ${job.title} chez ${job.company}`);
         } else {
             aiAnalysisCount++;
             console.log(`📝 Analyse & Scoring IA pour : ${job.title} chez ${job.company}`);
@@ -392,39 +383,30 @@ export async function runFullJobHunterSearch({ country, jobTitle, keywords = '',
             let selectedCv = null;
             let pdfPath = null;
             
-            // Si aucun CV disponible, utiliser un score par défaut
             if (cvsWithContent.length === 0 || skipAiAnalysis) {
                 aiResult = {
                     score: 50,
-                    letter: skipAiAnalysis
-                        ? 'Analyse IA non réalisée (limite mémoire atteinte).'
-                        : 'Lettre de motivation non générée (aucun CV disponible).',
-                    analysis: skipAiAnalysis
-                        ? 'Analyse différée par manque de ressources.'
-                        : 'Analyse simplifiée sans CV de référence.'
+                    letter: 'Analyse non réalisée.',
+                    analysis: 'Analyse simplifiée sans CV de référence.'
                 };
             } else {
-                // A. Sélection du CV idéal
                 const bestCvId = await selectBestCv(offerText, cvsWithContent);
                 selectedCv = cvsWithContent.find(c => c.id === bestCvId) || cvsWithContent[0];
 
-                // B. Scoring et rédaction de la lettre
                 aiResult = await analyzeJob(offerText, selectedCv.path, lang);
 
-                // C. Export PDF de la lettre de motivation
                 const safeCompany = (job.company || 'Entreprise').replace(/[^a-zA-Z0-9_-]/g, '_');
-                const pdfFilename = `${safeCompany}_${Date.now()}_${lang}.pdf`;
+                const pdfFilename = `${userId}_${safeCompany}_${Date.now()}_${lang}.pdf`;
                 pdfPath = path.resolve(__dirname, `../cover_letters/generated/${pdfFilename}`);
                 await fs.mkdir(path.dirname(pdfPath), { recursive: true });
                 await exportLetterToPdf(aiResult.letter, job.company, pdfPath);
             }
 
-            // D. Déterminer si le provider supporte l'auto-apply
             const providerInstance = defaultRegistry.get(job.provider);
             const isAutoApplySupported = providerInstance ? (providerInstance.supportsAutoApply(job) ? 1 : 0) : 0;
 
-            // E. Sauvegarde en BDD avec les champs avancés
             const [insertedId] = await db('jobs').insert({
+                user_id: userId,
                 title: job.title,
                 company: job.company,
                 link: job.link,
@@ -457,18 +439,16 @@ export async function runFullJobHunterSearch({ country, jobTitle, keywords = '',
             const insertedJob = await db('jobs').where({ id: insertedId.id || insertedId }).first();
             processedJobs.push(insertedJob);
 
-            // Envoyer notification si l'offre est pertinente (score > 70 par exemple)
             if (insertedJob.score > 70) {
                 await sendJobNotification(insertedJob);
             }
 
-            console.log(`💾 Offre enregistrée (ID: ${insertedJob.id}) | Score: ${insertedJob.score}/100 | AutoApply: ${isAutoApplySupported ? 'Oui' : 'Non'}`);
+            console.log(`💾 Offre enregistrée (ID: ${insertedJob.id}, User: ${userId}) | Score: ${insertedJob.score}/100`);
         } catch (err) {
             console.error(`❌ Erreur traitement IA pour ${job.company}:`, err.message);
         }
     }
 
-    // Trier les offres par score décroissant
     processedJobs.sort((a, b) => (b.score || 0) - (a.score || 0));
 
     return {

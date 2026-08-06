@@ -180,7 +180,7 @@ function createApp() {
                 .orderBy('id', 'desc')
                 .first();
             // Prendre le dernier run (quel que soit son statut) pour l'état actuel
-            const latestSearchRun = await db('search_runs').select('*').orderBy('created_at', 'desc').orderBy('id', 'desc').first();
+            const latestSearchRun = await db('search_runs').select('*').where({ user_id: req.user.id }).orderBy('created_at', 'desc').orderBy('id', 'desc').first();
             return {
                 totalJobs: Number(jobsCount?.count || 0),
                 totalSearchRuns: Number(runsCount?.count || 0),
@@ -251,7 +251,7 @@ function createApp() {
     // Endpoints Recherches Planifiées
     app.get('/api/schedules', async (req, res) => {
         try {
-            const schedules = await withDb((db) => db('scheduled_searches').select('*').orderBy('created_at', 'desc'));
+            const schedules = await withDb((db) => db('scheduled_searches').select('*').where({ user_id: req.user.id }).orderBy('created_at', 'desc'));
             res.json(schedules);
         } catch {
             res.status(500).json({ error: 'Impossible de charger les recherches planifiées.' });
@@ -277,6 +277,7 @@ function createApp() {
             const providers_list = JSON.stringify(parseProviderSelection(req.body?.providers ?? req.body?.selectedProviderIds));
 
             const [id] = await withDb((db) => db('scheduled_searches').insert({
+                user_id: req.user.id,
                 name, country, title, keywords, lang, cron_expression,
                 city, experience_level, contract_type, remote, job_type, salary, min_salary, max_salary, providers_list,
                 enabled: true
@@ -291,7 +292,7 @@ function createApp() {
     app.put('/api/schedules/:id/toggle', async (req, res) => {
         try {
             const { enabled } = req.body;
-            const changed = await withDb((db) => db('scheduled_searches').where({ id: req.params.id }).update({ enabled: enabled ? 1 : 0 }));
+            const changed = await withDb((db) => db('scheduled_searches').where({ id: req.params.id, user_id: req.user.id }).update({ enabled: enabled ? 1 : 0 }));
             if (!changed) return res.status(404).json({ error: 'Recherche planifiée introuvable.' });
             res.json({ success: true });
         } catch {
@@ -301,7 +302,7 @@ function createApp() {
 
     app.delete('/api/schedules/:id', async (req, res) => {
         try {
-            const changed = await withDb((db) => db('scheduled_searches').where({ id: req.params.id }).del());
+            const changed = await withDb((db) => db('scheduled_searches').where({ id: req.params.id, user_id: req.user.id }).del());
             if (!changed) return res.status(404).json({ error: 'Recherche planifiée introuvable.' });
             res.json({ success: true });
         } catch {
@@ -312,7 +313,7 @@ function createApp() {
     // Endpoints Search Configs (configurations de recherche sauvegardées)
     app.get('/api/search-configs', async (req, res) => {
         try {
-            const configs = await withDb((db) => db('search_configs').select('*').orderBy('created_at', 'desc'));
+            const configs = await withDb((db) => db('search_configs').select('*').where({ user_id: req.user.id }).orderBy('created_at', 'desc'));
             res.json(configs);
         } catch {
             res.status(500).json({ error: 'Impossible de charger les configurations de recherche.' });
@@ -341,7 +342,7 @@ function createApp() {
                 providers_list: JSON.stringify(parseProviderSelection(req.body?.providers ?? req.body?.selectedProviderIds)),
                 enabled: true
             };
-            const [id] = await withDb((db) => db('search_configs').insert(config));
+            const [id] = await withDb((db) => db('search_configs').insert({ ...config, user_id: req.user.id }));
             const created = await withDb((db) => db('search_configs').where({ id }).first());
             res.status(201).json(created);
         } catch (error) {
@@ -370,9 +371,9 @@ function createApp() {
             if (providers.length > 0) {
                 updates.providers_list = JSON.stringify(providers);
             }
-            const changed = await withDb((db) => db('search_configs').where({ id: req.params.id }).update(updates));
+            const changed = await withDb((db) => db('search_configs').where({ id: req.params.id, user_id: req.user.id }).update(updates));
             if (!changed) return res.status(404).json({ error: 'Configuration introuvable.' });
-            const updated = await withDb((db) => db('search_configs').where({ id: req.params.id }).first());
+            const updated = await withDb((db) => db('search_configs').where({ id: req.params.id, user_id: req.user.id }).first());
             res.json(updated);
         } catch {
             res.status(500).json({ error: 'Impossible de modifier la configuration.' });
@@ -381,7 +382,7 @@ function createApp() {
 
     app.delete('/api/search-configs/:id', async (req, res) => {
         try {
-            const changed = await withDb((db) => db('search_configs').where({ id: req.params.id }).del());
+            const changed = await withDb((db) => db('search_configs').where({ id: req.params.id, user_id: req.user.id }).del());
             if (!changed) return res.status(404).json({ error: 'Configuration introuvable.' });
             res.json({ success: true });
         } catch {
@@ -391,7 +392,7 @@ function createApp() {
 
     app.post('/api/search-configs/:id/run', async (req, res) => {
         try {
-            const config = await withDb((db) => db('search_configs').where({ id: req.params.id }).first());
+            const config = await withDb((db) => db('search_configs').where({ id: req.params.id, user_id: req.user.id }).first());
             if (!config) return res.status(404).json({ error: 'Configuration introuvable.' });
 
             const advancedFilters = {
@@ -408,6 +409,7 @@ function createApp() {
 
             const run = await withDb(async (db) => {
                 const [id] = await db('search_runs').insert({
+                    user_id: req.user.id,
                     country: config.country,
                     title: config.title,
                     keywords: config.keywords || '',
@@ -442,7 +444,7 @@ function createApp() {
         }
     });
 
-    app.post('/api/admin/backup', async (req, res) => {
+    app.post('/api/admin/backup', authorize(['SUPER_ADMIN']), async (req, res) => {
         try {
             const result = await backupDatabase();
             res.json(result);
@@ -451,7 +453,18 @@ function createApp() {
         }
     });
 
+
+    app.get('/api/admin/users', authorize(['SUPER_ADMIN']), async (req, res) => {
+        try {
+            const users = await withDb((db) => db('users').select('id', 'email', 'role', 'status', 'created_at'));
+            res.json(users);
+        } catch {
+            res.status(500).json({ error: 'Impossible de charger les utilisateurs.' });
+        }
+    });
+
     // Endpoints Providers
+
     app.get('/api/providers', async (req, res) => {
         try {
             res.json(defaultRegistry.getMetadataList());
@@ -497,7 +510,7 @@ function createApp() {
 
     app.delete('/api/jobs/:id', async (req, res) => {
         try {
-            const changes = await withDb((db) => db('jobs').where({ id: req.params.id }).del());
+            const changes = await withDb((db) => db('jobs').where({ id: req.params.id, user_id: req.user.id }).del());
             if (!changes) return res.status(404).json({ error: 'Offre introuvable.' });
             broadcast('job_deleted', { id: req.params.id });
             res.json({ success: true });
@@ -508,7 +521,7 @@ function createApp() {
 
     app.get('/api/jobs/:id/pdf', async (req, res) => {
         try {
-            const job = await withDb((db) => db('jobs').where({ id: req.params.id }).select('pdf_path').first());
+            const job = await withDb((db) => db('jobs').where({ id: req.params.id, user_id: req.user.id }).select('pdf_path').first());
             if (!job?.pdf_path) return res.status(404).json({ error: 'PDF introuvable.' });
             const pdfPath = path.resolve(job.pdf_path);
             if (!pdfPath.startsWith(`${generatedLettersDirectory}${path.sep}`)) {
@@ -534,7 +547,7 @@ function createApp() {
 
     app.get('/api/jobs/:id/pack', async (req, res) => {
         try {
-            const job = await withDb((db) => db('jobs').where({ id: req.params.id }).first());
+            const job = await withDb((db) => db('jobs').where({ id: req.params.id, user_id: req.user.id }).first());
             if (!job) return res.status(404).json({ error: 'Offre introuvable.' });
             
             let pack = {};
@@ -562,7 +575,7 @@ function createApp() {
     app.post('/api/jobs/:id/apply', async (req, res) => {
         try {
             await submitJob(req.params.id);
-            const job = await withDb((db) => db('jobs').where({ id: req.params.id }).first());
+            const job = await withDb((db) => db('jobs').where({ id: req.params.id, user_id: req.user.id }).first());
             broadcast('job_updated', { id: req.params.id, status: job?.status, error: job?.error });
             res.json({ success: true, status: job.status, error: job.error });
         } catch (error) {
@@ -572,7 +585,7 @@ function createApp() {
 
     app.get('/api/cvs', async (req, res) => {
         try {
-            const cvs = await withDb((db) => db('cvs').select('id', 'name', 'path', 'is_active', 'created_at').orderBy('is_active', 'desc').orderBy('created_at', 'desc'));
+            const cvs = await withDb((db) => db('cvs').select('id', 'name', 'path', 'is_active', 'created_at').where({ user_id: req.user.id }).orderBy('is_active', 'desc').orderBy('created_at', 'desc'));
             res.json(cvs);
         } catch {
             res.status(500).json({ error: 'Impossible de charger les CV.' });
@@ -582,11 +595,11 @@ function createApp() {
     app.put('/api/cvs/:id/active', async (req, res) => {
         try {
             const found = await withDb(async (db) => {
-                const cv = await db('cvs').where({ id: req.params.id }).select('id').first();
+                const cv = await db('cvs').where({ id: req.params.id, user_id: req.user.id }).select('id').first();
                 if (!cv) return false;
                 await db.transaction(async (trx) => {
-                    await trx('cvs').update({ is_active: 0 });
-                    await trx('cvs').where({ id: req.params.id }).update({ is_active: 1 });
+                    await trx('cvs').where({ user_id: req.user.id }).update({ is_active: 0 });
+                    await trx('cvs').where({ id: req.params.id, user_id: req.user.id }).update({ is_active: 1 });
                 });
                 return true;
             });
@@ -599,7 +612,7 @@ function createApp() {
 
     app.get('/api/profile', async (req, res) => {
         try {
-            const profile = await withDb((db) => db('profile').where({ id: 1 }).first());
+            const profile = await withDb((db) => db('profile').where({ user_id: req.user.id }).first());
             res.json(profile || {});
         } catch {
             res.status(500).json({ error: 'Impossible de charger le profil.' });
@@ -611,7 +624,7 @@ function createApp() {
             const profile = req.body || {};
             await withDb((db) => db('profile')
                 .insert({
-                    id: 1,
+                    user_id: req.user.id,
                     first_name: optionalText(profile.first_name),
                     last_name: optionalText(profile.last_name),
                     dob: optionalText(profile.dob),
@@ -626,7 +639,7 @@ function createApp() {
                     education: optionalText(profile.education),
                     availability: optionalText(profile.availability)
                 })
-                .onConflict('id')
+                .onConflict('user_id')
                 .merge()
             );
             res.json({ success: true });
@@ -637,7 +650,7 @@ function createApp() {
 
     app.get('/api/search-runs', async (req, res) => {
         try {
-            const runs = await withDb((db) => db('search_runs').select('*').orderBy('created_at', 'desc').orderBy('id', 'desc').limit(20));
+            const runs = await withDb((db) => db('search_runs').select('*').where({ user_id: req.user.id }).orderBy('created_at', 'desc').orderBy('id', 'desc').limit(20));
             res.json(runs);
         } catch {
             res.status(500).json({ error: 'Impossible de charger les recherches.' });
@@ -661,7 +674,7 @@ function createApp() {
             const selectedProviderIds = parseProviderSelection(req.body?.selectedProviderIds);
 
             const run = await withDb(async (db) => {
-                const [id] = await db('search_runs').insert({ country, title, keywords, lang, status: 'queued' });
+                const [id] = await db('search_runs').insert({ country, title, keywords, lang, status: 'queued', user_id: req.user.id });
                 return { id };
             });
             broadcast('search_run_updated', { id: run.id, status: 'queued', title, country });

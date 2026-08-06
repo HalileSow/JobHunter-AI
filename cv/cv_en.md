@@ -9,7 +9,7 @@ Language: French
 
 ## Professional Profile
 
-Motivated versatile worker with 3 years of experience in haberdashery. Comfortable with practical tasks, work organization, and customer contact. Serious, available, and ready to work in agriculture, logistics, housekeeping, hospitality, or food service.
+Motivated, serious, and rigorous person with experience in commerce and stock management. Used to physical work, organization, and customer contact. Immediately available and ready to work in factories, logistics, warehouses, production, handling, or any other position requiring motivation and adaptability.
 
 ## Work Experience
 
@@ -25,14 +25,18 @@ Independent activity
 
 ## Skills
 
-- Versatility
-- Organization
-- Customer service
 - Stock management
-- Customer reception
+- Sense of responsibility
 - Teamwork
-- Fast adaptation
-- Reliability and punctuality
+- Organization
+- Order preparation
+- Receipt of goods
+
+## Professional Objective
+
+Obtain a position in an international company to develop my skills, acquire sustainable professional experience, and actively contribute to the company's goals.
+
+Sectors of interest: Agriculture, logistics, maintenance, hospitality, catering, factory, industry, IT, Commerce.
 
 ## Languages
 

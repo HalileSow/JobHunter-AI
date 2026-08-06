@@ -44,13 +44,14 @@ try {
     assert.equal(systemStatus.status, 'healthy');
     assert(typeof systemStatus.activeProviders === 'number');
 
-    // === Test 4: Admin backup — requires SUPER_ADMIN role ===
-    // Promote the test user to SUPER_ADMIN directly in the DB
-    const { db } = await import('../../automation/db.js');
-    await db('users').where({ email: 'test@example.com' }).update({ role: 'SUPER_ADMIN' });
+    // === Test 4: Bootstrap SUPER_ADMIN creation ===
+    const adminPayload = { email: 'superadmin@jobhunter.local', password: 'password123' };
+    const adminReg = await fetch(`${baseUrl}/api/auth/register`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(adminPayload) });
+    assert.equal(adminReg.status, 201);
+    const adminRegData = await adminReg.json();
+    assert.equal(adminRegData.role, 'SUPER_ADMIN');
 
-    // Re-login to get a fresh token with SUPER_ADMIN role
-    const adminLogin = await fetch(`${baseUrl}/api/auth/login`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(userPayload) });
+    const adminLogin = await fetch(`${baseUrl}/api/auth/login`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(adminPayload) });
     assert.equal(adminLogin.status, 200);
     const { token: adminToken } = await adminLogin.json();
     const adminHeaders = { 'content-type': 'application/json', 'authorization': `Bearer ${adminToken}` };

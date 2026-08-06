@@ -14,6 +14,7 @@ import { launchSearchRun } from '../automation/search_run_launcher.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const JWT_SECRET = process.env.JWT_SECRET || 'dev-secret-key';
+const BOOTSTRAP_SUPER_ADMIN_EMAIL = (process.env.SUPER_ADMIN_BOOTSTRAP_EMAIL || 'superadmin@jobhunter.local').trim().toLowerCase();
 const generatedLettersDirectory = path.join(__dirname, '..', 'cover_letters', 'generated');
 const port = Number(process.env.PORT || 4173);
 const allowedLanguages = new Set(['fr', 'en', 'de']);
@@ -32,6 +33,10 @@ function requiredText(value, label) {
 
 function optionalText(value) {
     return typeof value === 'string' ? value.trim() : '';
+}
+
+function normalizeEmail(value) {
+    return requiredText(value, 'Email').toLowerCase();
 }
 
 function parseProviderSelection(rawValue) {
@@ -208,12 +213,15 @@ function createApp() {
 
     app.post('/api/auth/register', async (req, res) => {
         try {
-            const { email, password } = req.body;
-            requiredText(email, 'Email');
-            requiredText(password, 'Mot de passe');
+            const email = normalizeEmail(req.body?.email);
+            const password = requiredText(req.body?.password, 'Mot de passe');
             const hashedPassword = await bcrypt.hash(password, 10);
-            await withDb((db) => db('users').insert({ email, password: hashedPassword }));
-            res.status(201).json({ success: true });
+            const role = await withDb(async (db) => {
+                const hasSuperAdmin = await db('users').where({ role: 'SUPER_ADMIN' }).first();
+                return !hasSuperAdmin && email === BOOTSTRAP_SUPER_ADMIN_EMAIL ? 'SUPER_ADMIN' : 'USER';
+            });
+            await withDb((db) => db('users').insert({ email, password: hashedPassword, role }));
+            res.status(201).json({ success: true, role });
         } catch (error) {
             if (error.message.includes('SQLITE_CONSTRAINT')) {
                 res.status(409).json({ error: 'Utilisateur déjà existant.' });
@@ -225,12 +233,22 @@ function createApp() {
 
     app.post('/api/auth/login', async (req, res) => {
         try {
-            const { email, password } = req.body;
-            requiredText(email, 'Email');
-            requiredText(password, 'Mot de passe');
+            const email = normalizeEmail(req.body?.email);
+            const password = requiredText(req.body?.password, 'Mot de passe');
             const user = await withDb((db) => db('users').where({ email }).first());
             if (!user || !(await bcrypt.compare(password, user.password))) {
                 return res.status(401).json({ error: 'Identifiants invalides.' });
+            }
+            if (user.role !== 'SUPER_ADMIN' && email === BOOTSTRAP_SUPER_ADMIN_EMAIL) {
+                const bootstrapAdminMissing = await withDb(async (db) => {
+                    const existingSuperAdmin = await db('users').where({ role: 'SUPER_ADMIN' }).first();
+                    if (existingSuperAdmin) return false;
+                    await db('users').where({ id: user.id }).update({ role: 'SUPER_ADMIN' });
+                    return true;
+                });
+                if (bootstrapAdminMissing) {
+                    user.role = 'SUPER_ADMIN';
+                }
             }
             if (user.status !== 'ACTIVE') {
                 return res.status(403).json({ error: 'Compte suspendu.' });

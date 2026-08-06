@@ -446,6 +446,7 @@ function createApp() {
                 lang: config.lang || 'fr',
                 advancedFilters,
                 selectedProviderIds: parseProviderSelection(config.providers_list),
+                userId: req.user.id,
                 onStatusChange: (updates) => {
                     if (updates.status) {
                         broadcast('search_run_updated', { id: run.id, status: updates.status, error: updates.error || null });
@@ -705,6 +706,7 @@ function createApp() {
                 lang,
                 advancedFilters: { city, experienceLevel, contractType, remote, jobType, salary, minSalary, maxSalary },
                 selectedProviderIds,
+                userId: req.user.id,
                 onStatusChange: (updates) => {
                     if (updates.status) {
                         broadcast('search_run_updated', { id: run.id, status: updates.status, error: updates.error || null });

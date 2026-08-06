@@ -24,6 +24,7 @@ executeScheduledSearchRun({
     title,
     keywords: keywords || '',
     lang: lang || 'fr',
+    userId: payload.userId || null,
     advancedFilters: payload.advancedFilters || {},
     selectedProviderIds: payload.selectedProviderIds || []
 }).catch((error) => {

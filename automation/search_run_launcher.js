@@ -16,6 +16,7 @@ export async function launchSearchRun({
     lang = 'fr',
     advancedFilters = {},
     selectedProviderIds = [],
+    userId = null,
     onStatusChange = null,
     cwd = __dirname
 }) {
@@ -29,7 +30,8 @@ export async function launchSearchRun({
         selectedProviderIds,
         runId,
         scheduleId,
-        nextRunAt
+        nextRunAt,
+        userId
     };
 
     const child = spawn(process.execPath, [automationScript, country, title, keywords || '', lang || 'fr', JSON.stringify(payload)], {

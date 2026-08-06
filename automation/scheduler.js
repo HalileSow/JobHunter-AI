@@ -82,8 +82,25 @@ async function tick() {
 
     const schedules = await db('scheduled_searches').where({ enabled: true });
 
+    // Fallback: trouver le SUPER_ADMIN pour les recherches orphelines
+    let fallbackUserId = null;
+
     for (const schedule of schedules) {
         if (!matchesCron(schedule.cron_expression, now)) continue;
+
+        // Résoudre le user_id : utiliser celui du schedule, sinon le SUPER_ADMIN
+        let userId = schedule.user_id;
+        if (!userId) {
+            if (!fallbackUserId) {
+                const admin = await db('users').where({ role: 'SUPER_ADMIN' }).first();
+                fallbackUserId = admin?.id || null;
+            }
+            userId = fallbackUserId;
+        }
+        if (!userId) {
+            console.warn(`⚠️ [Scheduler] Recherche "${schedule.name}" ignorée : aucun user_id disponible.`);
+            continue;
+        }
 
         // Éviter de relancer si déjà exécuté dans la même minute
         if (schedule.last_run_at) {
@@ -109,7 +126,8 @@ async function tick() {
             title: schedule.title,
             keywords: schedule.keywords || '',
             lang: schedule.lang || 'fr',
-            status: 'running'
+            status: 'running',
+            user_id: userId
         }).returning('id');
         const runId = inserted?.id || inserted;
 
@@ -121,7 +139,8 @@ async function tick() {
                 keywords: schedule.keywords || '',
                 ...advancedFilters,
                 lang: schedule.lang || 'fr',
-                selectedProviderIds: parseProviderSelection(schedule.providers_list)
+                selectedProviderIds: parseProviderSelection(schedule.providers_list),
+                userId
             });
 
             // 2. Traitement automatique des soumissions pour les offres sauvegardées

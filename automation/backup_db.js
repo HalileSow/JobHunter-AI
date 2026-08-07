@@ -18,7 +18,7 @@ export async function backupDatabase(options = {}) {
     await fs.mkdir(backupsDir, { recursive: true });
 
     const now = new Date();
-    const timestamp = now.toISOString().replace(/[:.]/g, '-') + '-' + Date.now();
+    const timestamp = now.toISOString().replace(/[:.]/g, '-') + '-' + Date.now() + '-' + crypto.randomUUID().slice(0, 8);
     const backupFileName = `backup-jobhunter-${timestamp}.db`;
     const targetPath = path.join(backupsDir, backupFileName);
 

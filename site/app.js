@@ -450,6 +450,17 @@ async function loadProviders() {
     try {
         const providers = await api('/providers');
         const grid = document.getElementById('providers-list-grid');
+
+        // Check if user is SUPER_ADMIN
+        const token = localStorage.getItem('jwt_token');
+        let isAdmin = false;
+        if (token) {
+            try {
+                const payload = JSON.parse(atob(token.split('.')[1]));
+                isAdmin = payload.role === 'SUPER_ADMIN';
+            } catch {}
+        }
+
         grid.innerHTML = providers.map(p => `
             <div class="provider-card" style="background: var(--bg-card, #1e293b); padding: 16px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.1);">
                 <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
@@ -459,9 +470,12 @@ async function loadProviders() {
                 <div style="font-size: 0.8rem; color: #94a3b8; margin-bottom: 12px;">
                     ID: <code>${escapeHtml(p.id)}</code> | Pays: ${escapeHtml((p.countries || []).join(', '))}
                 </div>
-                <button onclick="toggleProvider('${p.id}', ${!p.enabled})" style="width: 100%; padding: 8px; border-radius: 6px; border: none; cursor: pointer; font-weight: 600; background: ${p.enabled ? '#10b981' : '#475569'}; color: white;">
-                    ${p.enabled ? '<i class="fas fa-check-circle"></i> Actif (Cliquez pour désactiver)' : '<i class="fas fa-power-off"></i> Inactif (Cliquez pour activer)'}
-                </button>
+                <div style="font-size: 0.8rem; color: ${p.enabled ? '#10b981' : '#94a3b8'}; font-weight: 600;">
+                    ${p.enabled ? '<i class="fas fa-check-circle"></i> Actif' : '<i class="fas fa-power-off"></i> Inactif'}
+                </div>
+                ${isAdmin ? `<button onclick="toggleProvider('${p.id}', ${!p.enabled})" style="width: 100%; margin-top: 8px; padding: 8px; border-radius: 6px; border: none; cursor: pointer; font-weight: 600; background: ${p.enabled ? '#475569' : '#10b981'}; color: white;">
+                    ${p.enabled ? '<i class="fas fa-toggle-off"></i> Désactiver' : '<i class="fas fa-toggle-on"></i> Activer'}
+                </button>` : ''}
             </div>
         `).join('');
     } catch (e) {
@@ -471,7 +485,18 @@ async function loadProviders() {
 
 async function toggleProvider(id, enabled) {
     try {
-        await api(`/providers/${id}/toggle`, 'POST', { enabled });
+        // Check if user is SUPER_ADMIN
+        const token = localStorage.getItem('jwt_token');
+        let isAdmin = false;
+        if (token) {
+            try {
+                const payload = JSON.parse(atob(token.split('.')[1]));
+                isAdmin = payload.role === 'SUPER_ADMIN';
+            } catch {}
+        }
+
+        const endpoint = isAdmin ? `/admin/providers/${id}/toggle` : `/providers/${id}/toggle`;
+        await api(endpoint, 'POST', { enabled });
         loadProviders();
     } catch (e) {
         alert(e.message);

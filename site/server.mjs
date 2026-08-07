@@ -514,14 +514,14 @@ function createApp() {
         }
     });
 
-    app.post('/api/providers/:id/toggle', async (req, res) => {
+    app.post('/api/admin/providers/:id/toggle', authorize(['SUPER_ADMIN']), async (req, res) => {
         try {
             const { enabled } = req.body;
             const success = defaultRegistry.setEnabled(req.params.id, Boolean(enabled));
             if (!success) return res.status(404).json({ error: 'Provider introuvable.' });
             res.json({ success: true, providers: defaultRegistry.getMetadataList() });
         } catch {
-            res.status(500).json({ error: 'Impossible d’activer/désactiver le provider.' });
+            res.status(500).json({ error: 'Impossible d\'activer/désactiver le provider.' });
         }
     });
 
@@ -578,6 +578,11 @@ function createApp() {
 
     app.post('/api/jobs/:id/confirm', async (req, res) => {
         try {
+            const job = await withDb((db) => db('jobs').where({ id: req.params.id }).first());
+            if (!job) return res.status(404).json({ error: 'Offre introuvable.' });
+            if (job.user_id !== req.user.id && req.user.role !== 'SUPER_ADMIN') {
+                return res.status(403).json({ error: 'Accès interdit.' });
+            }
             const result = await confirmUserSubmission(req.params.id);
             broadcast('job_updated', { id: req.params.id, status: 'Soumis' });
             res.json(result);
@@ -615,10 +620,15 @@ function createApp() {
 
     app.post('/api/jobs/:id/apply', async (req, res) => {
         try {
+            const job = await withDb((db) => db('jobs').where({ id: req.params.id }).first());
+            if (!job) return res.status(404).json({ error: 'Offre introuvable.' });
+            if (job.user_id !== req.user.id && req.user.role !== 'SUPER_ADMIN') {
+                return res.status(403).json({ error: 'Accès interdit.' });
+            }
             await submitJob(req.params.id);
-            const job = await withDb((db) => db('jobs').where({ id: req.params.id, user_id: req.user.id }).first());
-            broadcast('job_updated', { id: req.params.id, status: job?.status, error: job?.error });
-            res.json({ success: true, status: job.status, error: job.error });
+            const updatedJob = await withDb((db) => db('jobs').where({ id: req.params.id, user_id: job.user_id }).first());
+            broadcast('job_updated', { id: req.params.id, status: updatedJob?.status, error: updatedJob?.error });
+            res.json({ success: true, status: updatedJob.status, error: updatedJob.error });
         } catch (error) {
             res.status(500).json({ error: `Erreur lors de la tentative de soumission : ${error.message}` });
         }

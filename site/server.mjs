@@ -11,9 +11,13 @@ import { backupDatabase } from '../automation/backup_db.js';
 import { startScheduler, stopScheduler } from '../automation/scheduler.js';
 import { closeBrowser } from '../automation/browser_pool.js';
 import { launchSearchRun } from '../automation/search_run_launcher.js';
+import { importDefaultCvs } from '../automation/import_default_cvs.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const JWT_SECRET = process.env.JWT_SECRET || 'dev-secret-key';
+const JWT_SECRET = process.env.JWT_SECRET || (() => {
+    console.warn('⚠️  JWT_SECRET non configuré — utilisation d\'un secret par défaut. Définissez JWT_SECRET dans .env pour la production.');
+    return 'dev-secret-key';
+})();
 const BOOTSTRAP_SUPER_ADMIN_EMAIL = (process.env.SUPER_ADMIN_BOOTSTRAP_EMAIL || 'superadmin@jobhunter.local').trim().toLowerCase();
 const generatedLettersDirectory = path.join(__dirname, '..', 'cover_letters', 'generated');
 const port = Number(process.env.PORT || 4173);
@@ -92,7 +96,7 @@ function authorize(allowedRoles = []) {
 function createApp() {
     const app = express();
     app.use(cors());
-    app.use(express.json({ limit: '100kb' }));
+    app.use(express.json({ limit: '2mb' }));
     app.use(express.static(__dirname));
 
     let sseClients = [];
@@ -220,7 +224,12 @@ function createApp() {
                 const hasSuperAdmin = await db('users').where({ role: 'SUPER_ADMIN' }).first();
                 return !hasSuperAdmin && email === BOOTSTRAP_SUPER_ADMIN_EMAIL ? 'SUPER_ADMIN' : 'USER';
             });
-            await withDb((db) => db('users').insert({ email, password: hashedPassword, role }));
+            const [userId] = await withDb((db) => db('users').insert({ email, password: hashedPassword, role }));
+            try {
+                await importDefaultCvs(userId);
+            } catch (cvErr) {
+                console.warn('⚠️ Import CVs par défaut échoué:', cvErr.message);
+            }
             res.status(201).json({ success: true, role });
         } catch (error) {
             if (error.message.includes('SQLITE_CONSTRAINT')) {
@@ -604,7 +613,15 @@ function createApp() {
 
     app.get('/api/cvs', async (req, res) => {
         try {
-            const cvs = await withDb((db) => db('cvs').select('id', 'name', 'path', 'is_active', 'created_at').where({ user_id: req.user.id }).orderBy('is_active', 'desc').orderBy('created_at', 'desc'));
+            let cvs = await withDb((db) => db('cvs').select('id', 'name', 'path', 'lang', 'is_active', 'created_at').where({ user_id: req.user.id }).orderBy('is_active', 'desc').orderBy('created_at', 'desc'));
+            if (cvs.length === 0) {
+                try {
+                    await importDefaultCvs(req.user.id);
+                    cvs = await withDb((db) => db('cvs').select('id', 'name', 'path', 'lang', 'is_active', 'created_at').where({ user_id: req.user.id }).orderBy('is_active', 'desc').orderBy('created_at', 'desc'));
+                } catch (importErr) {
+                    console.warn('⚠️ Auto-import CVs échoué:', importErr.message);
+                }
+            }
             res.json(cvs);
         } catch {
             res.status(500).json({ error: 'Impossible de charger les CV.' });
@@ -625,7 +642,76 @@ function createApp() {
             if (!found) return res.status(404).json({ error: 'CV introuvable.' });
             res.json({ success: true });
         } catch {
-            res.status(500).json({ error: 'Impossible d’activer ce CV.' });
+            res.status(500).json({ error: "Impossible d'activer ce CV." });
+        }
+    });
+
+    app.delete('/api/cvs/:id', async (req, res) => {
+        try {
+            const cv = await withDb((db) => db('cvs').where({ id: req.params.id, user_id: req.user.id }).select('path').first());
+            if (!cv) return res.status(404).json({ error: 'CV introuvable.' });
+            await withDb((db) => db('cvs').where({ id: req.params.id, user_id: req.user.id }).del());
+            // Supprimer le fichier physique si le chemin est dans cv/storage
+            if (cv.path) {
+                try {
+                    const fs = await import('node:fs/promises');
+                    const resolvedPath = path.resolve(cv.path);
+                    const storageDir = path.join(__dirname, '..', 'cv', 'storage');
+                    if (resolvedPath.startsWith(storageDir)) {
+                        await fs.unlink(resolvedPath);
+                    }
+                } catch {
+                    // Fichier déjà supprimé ou inaccessible, on continue
+                }
+            }
+            res.json({ success: true });
+        } catch {
+            res.status(500).json({ error: 'Impossible de supprimer ce CV.' });
+        }
+    });
+
+    app.post('/api/cvs', async (req, res) => {
+        try {
+            const { name, content } = req.body || {};
+            const cvName = requiredText(name, 'Nom du CV');
+            const cvContent = requiredText(content, 'Contenu du CV');
+
+            const cvDir = path.join(__dirname, '..', 'cv', 'storage');
+            const fs = await import('node:fs/promises');
+            await fs.mkdir(cvDir, { recursive: true });
+
+            const isPdf = cvContent.startsWith('[PDF:');
+            const ext = isPdf ? '.pdf' : '.md';
+
+            const sanitized = cvName.replace(/[^a-zA-Z0-9_\-\u00C0-\u024F]/g, '_').substring(0, 80);
+            const fileName = `${req.user.id}_${Date.now()}_${sanitized}${ext}`;
+            const destPath = path.join(cvDir, fileName);
+
+            if (isPdf) {
+                // Extract base64 content after the [PDF:name] prefix
+                const base64Start = cvContent.indexOf(']\n') + 2;
+                const base64Data = cvContent.substring(base64Start);
+                const buffer = Buffer.from(base64Data, 'base64');
+                await fs.writeFile(destPath, buffer);
+            } else {
+                await fs.writeFile(destPath, cvContent, 'utf-8');
+            }
+
+            const [id] = await withDb((db) => db('cvs').insert({
+                user_id: req.user.id,
+                name: cvName,
+                path: destPath,
+                is_active: 0
+            }));
+
+            const cv = await withDb((db) => db('cvs').where({ id }).first());
+            res.status(201).json(cv);
+        } catch (error) {
+            if (error.message.includes('est obligatoire')) {
+                return res.status(400).json({ error: error.message });
+            }
+            console.error('Erreur upload CV:', error);
+            res.status(500).json({ error: "Impossible d'importer ce CV." });
         }
     });
 
@@ -728,7 +814,14 @@ function createApp() {
 const app = createApp();
 
 if (path.resolve(process.argv[1] || '') === fileURLToPath(import.meta.url)) {
-    initDb().then(() => {
+    initDb().then(async () => {
+        // Import default CVs for users who don't have any
+        try {
+            await importDefaultCvs();
+        } catch (err) {
+            console.warn('⚠️ Could not import default CVs:', err.message);
+        }
+
         const server = app.listen(port, '0.0.0.0', () => {
             console.log(`🚀 JobHunter-AI disponible sur http://localhost:${port}`);
             startScheduler();

@@ -372,6 +372,19 @@
                     <h1>Mes CVs Optimisés</h1>
                     <p>L'IA sélectionnera automatiquement la meilleure version selon chaque offre.</p>
                 </header>
+                <div class="cv-upload" style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:16px;align-items:flex-end;">
+                    <div>
+                        <label for="cv-name" style="display:block;font-size:0.85rem;color:#94a3b8;margin-bottom:4px;">Nom du CV</label>
+                        <input id="cv-name" type="text" placeholder="Mon CV Français" style="padding:8px 12px;border-radius:6px;border:1px solid #334155;background:#0f172a;color:#f8fafc;font-size:0.9rem;width:200px;" />
+                    </div>
+                    <div>
+                        <label for="cv-file" style="display:block;font-size:0.85rem;color:#94a3b8;margin-bottom:4px;">Fichier (.md, .txt, .pdf)</label>
+                        <input id="cv-file" type="file" accept=".md,.txt,.pdf" style="padding:6px;border-radius:6px;border:1px solid #334155;background:#0f172a;color:#f8fafc;font-size:0.85rem;" />
+                    </div>
+                    <button id="btn-upload-cv" class="btn-primary" style="padding:8px 16px;border-radius:6px;">
+                        <i class="fas fa-upload"></i> Importer
+                    </button>
+                </div>
                 <div class="cv-list" id="cv-list">
                     <!-- Liste des CV injectée ici -->
                 </div>

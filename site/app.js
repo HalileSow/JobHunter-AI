@@ -514,18 +514,86 @@ document.getElementById('btn-launch-search').addEventListener('click', async () 
 
 // CVS: Load List
 async function loadCvs() {
-    const cvs = await api('/cvs');
-    const list = document.getElementById('cv-list');
-    list.innerHTML = cvs.length ? cvs.map(cv => `
-        <div class="cv-card" style="display: flex; justify-content: space-between; align-items: center; background: #1e293b; padding: 15px; border-radius: 8px; margin-bottom: 10px;">
-            <div>
-                <h3 style="margin: 0; font-size: 1rem;">${escapeHtml(cv.name)}</h3>
-                <p style="margin: 4px 0 0 0; font-size: 0.8rem; color: #94a3b8;">${cv.is_active ? '✅ CV Actif par défaut' : 'CV disponible'}</p>
+    try {
+        const cvs = await api('/cvs');
+        const list = document.getElementById('cv-list');
+        list.innerHTML = cvs.length ? cvs.map(cv => `
+            <div class="cv-card" style="display: flex; justify-content: space-between; align-items: center; background: #1e293b; padding: 15px; border-radius: 8px; margin-bottom: 10px;">
+                <div>
+                    <h3 style="margin: 0; font-size: 1rem;">${escapeHtml(cv.name)}</h3>
+                    <p style="margin: 4px 0 0 0; font-size: 0.8rem; color: #94a3b8;">${cv.is_active ? '✅ CV Actif par défaut' : 'CV disponible'}</p>
+                </div>
+                <div style="display:flex;gap:8px;align-items:center;">
+                    <button onclick="activateCv(${cv.id})" class="btn-active" ${cv.is_active ? 'disabled' : ''} style="padding: 6px 14px; border-radius: 6px;">${cv.is_active ? 'Actif' : 'Activer'}</button>
+                    <button onclick="deleteCv(${cv.id}, '${escapeHtml(cv.name).replace(/'/g, "\\'")}')" class="btn-delete" style="padding: 6px 14px; border-radius: 6px; background: #dc2626; color: white; border: none; cursor: pointer;">Supprimer</button>
+                </div>
             </div>
-            <button onclick="activateCv(${cv.id})" class="btn-active" ${cv.is_active ? 'disabled' : ''} style="padding: 6px 14px; border-radius: 6px;">${cv.is_active ? 'Actif' : 'Activer'}</button>
-        </div>
-    `).join('') : '<p class="empty-state">Aucun CV enregistré.</p>';
+        `).join('') : '<p class="empty-state">Aucun CV enregistré. Importez votre premier CV ci-dessus.</p>';
+    } catch (error) {
+        alert(error.message);
+    }
 }
+
+// CVS: Upload
+async function uploadCv() {
+    const nameInput = document.getElementById('cv-name');
+    const fileInput = document.getElementById('cv-file');
+    const name = nameInput?.value?.trim();
+    const file = fileInput?.files?.[0];
+
+    if (!name) return alert('Veuillez donner un nom au CV.');
+    if (!file) return alert('Veuillez sélectionner un fichier.');
+
+    const btn = document.getElementById('btn-upload-cv');
+    btn.disabled = true;
+    btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Importation...';
+
+    try {
+        let content = '';
+        if (file.type === 'application/pdf' || file.name.endsWith('.pdf')) {
+            const reader = new FileReader();
+            content = await new Promise((resolve, reject) => {
+                reader.onload = () => {
+                    const bytes = new Uint8Array(reader.result);
+                    let binary = '';
+                    const chunkSize = 8192;
+                    for (let i = 0; i < bytes.length; i += chunkSize) {
+                        binary += String.fromCharCode.apply(null, bytes.subarray(i, i + chunkSize));
+                    }
+                    resolve(`[PDF:${file.name}]\n` + btoa(binary));
+                };
+                reader.onerror = reject;
+                reader.readAsArrayBuffer(file);
+            });
+        } else {
+            content = await file.text();
+        }
+
+        await api('/cvs', 'POST', { name, content });
+        nameInput.value = '';
+        fileInput.value = '';
+        await loadCvs();
+    } catch (error) {
+        alert(error.message);
+    } finally {
+        btn.disabled = false;
+        btn.innerHTML = '<i class="fas fa-upload"></i> Importer';
+    }
+}
+
+// CVS: Delete
+async function deleteCv(id, name) {
+    if (!confirm(`Supprimer le CV "${name}" ?`)) return;
+    try {
+        await api(`/cvs/${id}`, 'DELETE');
+        await loadCvs();
+    } catch (error) {
+        alert(error.message);
+    }
+}
+
+// CVS: Upload button click
+document.getElementById('btn-upload-cv')?.addEventListener('click', uploadCv);
 
 const runStatusLabels = {
     queued: 'En attente',

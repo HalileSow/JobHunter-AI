@@ -16,10 +16,28 @@ export async function callGemini(prompt) {
     if (!apiKey) throw new Error("GEMINI_API_KEY manquante");
     
     const genAI = new GoogleGenerativeAI(apiKey);
-    const model = genAI.getGenerativeModel({ model: "gemini-pro" });
+    const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash" });
     const result = await model.generateContent(prompt);
     const text = result.response.text();
     return text.replace(/```json/g, '').replace(/```/g, '').trim();
+}
+
+/**
+ * Helper pour appeler Qwen via l'API compatible OpenAI
+ */
+async function callQwen(prompt) {
+    const apiKey = process.env.QWEN_API_KEY;
+    const baseUrl = process.env.QWEN_BASE_URL;
+    if (!apiKey) throw new Error("QWEN_API_KEY manquante");
+    if (!baseUrl) throw new Error("QWEN_BASE_URL manquante");
+
+    const openai = new OpenAI({ apiKey, baseURL: baseUrl });
+    const response = await openai.chat.completions.create({
+        model: process.env.QWEN_MODEL || "qwen-plus",
+        messages: [{ role: "user", content: prompt }],
+        response_format: { type: "json_object" }
+    });
+    return response.choices[0].message.content;
 }
 
 /**
@@ -28,7 +46,7 @@ export async function callGemini(prompt) {
 async function callOpenAI(prompt) {
     const apiKey = process.env.OPENAI_API_KEY;
     if (!apiKey) throw new Error("OPENAI_API_KEY manquante");
-    
+
     const openai = new OpenAI({ apiKey });
     const response = await openai.chat.completions.create({
         model: "gpt-4o-mini",
@@ -128,13 +146,19 @@ Réponds UNIQUEMENT en JSON avec la structure suivante :
         const jsonString = await callGemini(prompt);
         return JSON.parse(jsonString);
     } catch (err) {
-        console.warn(`⚠️ Gemini a échoué : ${err.message}. Bascule vers OpenAI...`);
+        console.warn(`⚠️ Gemini a échoué : ${err.message}. Bascule vers Qwen...`);
         try {
-            const jsonString = await callOpenAI(prompt);
+            const jsonString = await callQwen(prompt);
             return JSON.parse(jsonString);
-        } catch (openaiErr) {
-            console.warn(`⚠️ OpenAI a aussi échoué : ${openaiErr.message}. Passage en mode simulation...`);
-            return JSON.parse(simulateAnalysis());
+        } catch (qwenErr) {
+            console.warn(`⚠️ Qwen a échoué : ${qwenErr.message}. Bascule vers OpenAI...`);
+            try {
+                const jsonString = await callOpenAI(prompt);
+                return JSON.parse(jsonString);
+            } catch (openaiErr) {
+                console.warn(`⚠️ OpenAI a aussi échoué : ${openaiErr.message}. Passage en mode simulation...`);
+                return JSON.parse(simulateAnalysis());
+            }
         }
     }
 }

@@ -22,3 +22,6 @@ cover_letters/generated/
 # IDE files
 .vscode/
 .idea/
+
+# User data / CVs (never commit personal CVs)
+cv/storage/

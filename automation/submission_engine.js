@@ -1,6 +1,6 @@
 import { initDb } from './db.js';
 import { defaultRegistry } from './providers/registry.js';
-import { getActiveCvPath, getCvById } from './cv_manager.js';
+import { getActiveCvPath, getCvById, getPrimaryCvPath, createOptimizedCvCopy } from './cv_manager.js';
 import { buildApplicationDocuments } from './application_automation.js';
 import { recordApplicationAttempt } from './application_attempts.js';
 
@@ -19,18 +19,48 @@ function normalizeJobStatus(submitResult = {}, fallback = 'Échec') {
 }
 
 async function resolveApplicationDocuments(job, profile, { lang = 'fr', outputDir = null } = {}) {
-    const selectedCv = job.selected_cv_id ? await getCvById(job.user_id, job.selected_cv_id) : null;
-    const fallbackCvPath = selectedCv?.path || await getActiveCvPath(job.user_id);
+    let selectedCvPath = null;
+    let selectedCv = null;
 
-    // Si aucun CV disponible, on continue quand même (la lettre de motivation sera utilisée)
-    if (!fallbackCvPath) {
+    // Priority 1: Use explicitly selected CV (if not primary, we'll still use it for this application)
+    if (job.selected_cv_id) {
+        selectedCv = await getCvById(job.user_id, job.selected_cv_id);
+        selectedCvPath = selectedCv?.path || null;
+    }
+
+    // Priority 2: If user has a primary CV, create an optimized copy for this application
+    if (!selectedCvPath) {
+        const primaryCvPath = await getPrimaryCvPath(job.user_id);
+        if (primaryCvPath) {
+            try {
+                const optimizedCopy = await createOptimizedCvCopy(job.user_id, job.id, lang || 'fr');
+                selectedCvPath = optimizedCopy.path;
+                // Update the job to reference the optimized copy
+                const db = await initDb();
+                await db('jobs').where({ id: job.id }).update({ selected_cv_id: optimizedCopy.id });
+                selectedCv = { id: optimizedCopy.id, path: optimizedCopy.path, is_primary: 0 };
+            } catch (err) {
+                console.warn(`⚠️ Failed to create optimized CV copy for job #${job.id}: ${err.message}`);
+                // Fallback to primary CV directly
+                selectedCvPath = primaryCvPath;
+            }
+        }
+    }
+
+    // Priority 3: Fallback to active CV
+    if (!selectedCvPath) {
+        selectedCvPath = await getActiveCvPath(job.user_id);
+    }
+
+    // If no CV available, continue anyway (cover letter will be used)
+    if (!selectedCvPath) {
         console.log(`⚠️ Aucun CV disponible pour l'offre #${job.id}. Préparation du dossier sans CV.`);
     }
 
     const docs = await buildApplicationDocuments({
         job,
         profile,
-        selectedCvPath: fallbackCvPath || null,
+        selectedCvPath,
         letterText: job.letter || '',
         letterPath: job.pdf_path || null,
         lang,

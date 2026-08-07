@@ -372,7 +372,7 @@
                     <h1>Mes CVs Optimisés</h1>
                     <p>L'IA sélectionnera automatiquement la meilleure version selon chaque offre.</p>
                 </header>
-                <div class="cv-upload" style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:16px;align-items:flex-end;">
+                <div id="cv-upload-section" class="cv-upload" style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:16px;align-items:flex-end;">
                     <div>
                         <label for="cv-name" style="display:block;font-size:0.85rem;color:#94a3b8;margin-bottom:4px;">Nom du CV</label>
                         <input id="cv-name" type="text" placeholder="Mon CV Français" style="padding:8px 12px;border-radius:6px;border:1px solid #334155;background:#0f172a;color:#f8fafc;font-size:0.9rem;width:200px;" />
@@ -384,6 +384,9 @@
                     <button id="btn-upload-cv" class="btn-primary" style="padding:8px 16px;border-radius:6px;">
                         <i class="fas fa-upload"></i> Importer
                     </button>
+                </div>
+                <div id="cv-primary-notice" style="display:none;background:rgba(245,158,11,0.1);border:1px solid rgba(245,158,11,0.3);border-radius:8px;padding:12px 16px;margin-bottom:16px;color:#fbbf24;font-size:0.9rem;">
+                    <i class="fas fa-info-circle"></i> Votre CV principal est protégé. L'IA crée automatiquement des copies optimisées pour chaque candidature.
                 </div>
                 <div class="cv-list" id="cv-list">
                     <!-- Liste des CV injectée ici -->

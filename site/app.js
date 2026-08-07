@@ -517,18 +517,37 @@ async function loadCvs() {
     try {
         const cvs = await api('/cvs');
         const list = document.getElementById('cv-list');
+        const uploadSection = document.getElementById('cv-upload-section');
+        const primaryNotice = document.getElementById('cv-primary-notice');
+
+        const hasPrimary = cvs.some(cv => cv.is_primary);
+
+        // Show/hide upload section based on primary CV
+        if (uploadSection) {
+            uploadSection.style.display = hasPrimary ? 'none' : 'flex';
+        }
+        if (primaryNotice) {
+            primaryNotice.style.display = hasPrimary ? 'block' : 'none';
+        }
+
         list.innerHTML = cvs.length ? cvs.map(cv => `
-            <div class="cv-card" style="display: flex; justify-content: space-between; align-items: center; background: #1e293b; padding: 15px; border-radius: 8px; margin-bottom: 10px;">
+            <div class="cv-card" style="display: flex; justify-content: space-between; align-items: center; background: #1e293b; padding: 15px; border-radius: 8px; margin-bottom: 10px; ${cv.is_primary ? 'border: 2px solid #f59e0b;' : ''}">
                 <div>
-                    <h3 style="margin: 0; font-size: 1rem;">${escapeHtml(cv.name)}</h3>
-                    <p style="margin: 4px 0 0 0; font-size: 0.8rem; color: #94a3b8;">${cv.is_active ? '✅ CV Actif par défaut' : 'CV disponible'}</p>
+                    <h3 style="margin: 0; font-size: 1rem;">
+                        ${cv.is_primary ? '<span style="color: #f59e0b; margin-right: 6px;" title="CV Principal (source de vérité)">👑</span>' : ''}
+                        ${escapeHtml(cv.name)}
+                    </h3>
+                    <p style="margin: 4px 0 0 0; font-size: 0.8rem; color: #94a3b8;">
+                        ${cv.is_primary ? '🔒 CV Principal — Non supprimable' : (cv.is_active ? '✅ CV Actif par défaut' : 'CV disponible')}
+                        ${cv.lang ? ' · Langue: ' + escapeHtml(cv.lang).toUpperCase() : ''}
+                    </p>
                 </div>
                 <div style="display:flex;gap:8px;align-items:center;">
-                    <button onclick="activateCv(${cv.id})" class="btn-active" ${cv.is_active ? 'disabled' : ''} style="padding: 6px 14px; border-radius: 6px;">${cv.is_active ? 'Actif' : 'Activer'}</button>
-                    <button onclick="deleteCv(${cv.id}, '${escapeHtml(cv.name).replace(/'/g, "\\'")}')" class="btn-delete" style="padding: 6px 14px; border-radius: 6px; background: #dc2626; color: white; border: none; cursor: pointer;">Supprimer</button>
+                    ${!cv.is_primary ? `<button onclick="activateCv(${cv.id})" class="btn-active" ${cv.is_active ? 'disabled' : ''} style="padding: 6px 14px; border-radius: 6px;">${cv.is_active ? 'Actif' : 'Activer'}</button>` : ''}
+                    ${!cv.is_primary ? `<button onclick="deleteCv(${cv.id}, '${escapeHtml(cv.name).replace(/'/g, "\\'")}')" class="btn-delete" style="padding: 6px 14px; border-radius: 6px; background: #dc2626; color: white; border: none; cursor: pointer;">Supprimer</button>` : ''}
                 </div>
             </div>
-        `).join('') : '<p class="empty-state">Aucun CV enregistré. Importez votre premier CV ci-dessus.</p>';
+        `).join('') : '<p class="empty-state">Aucun CV enregistré. Importez votre CV ci-dessus pour commencer à postuler.</p>';
     } catch (error) {
         alert(error.message);
     }

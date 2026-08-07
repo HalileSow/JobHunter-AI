@@ -262,6 +262,19 @@ function createApp() {
             if (user.status !== 'ACTIVE') {
                 return res.status(403).json({ error: 'Compte suspendu.' });
             }
+
+            // Auto-import master CV for SUPER_ADMIN users who don't have one
+            if (user.role === 'SUPER_ADMIN') {
+                try {
+                    const hasPrimaryCv = await withDb((db) => db('cvs').where({ user_id: user.id, is_primary: 1 }).first());
+                    if (!hasPrimaryCv) {
+                        await importDefaultCvs(user.id);
+                    }
+                } catch (cvErr) {
+                    console.warn('⚠️ Auto-import master CV at login échoué:', cvErr.message);
+                }
+            }
+
             const token = jwt.sign({ id: user.id, email: user.email, role: user.role }, JWT_SECRET, { expiresIn: '7d' });
             res.json({ token });
         } catch {
@@ -613,11 +626,11 @@ function createApp() {
 
     app.get('/api/cvs', async (req, res) => {
         try {
-            let cvs = await withDb((db) => db('cvs').select('id', 'name', 'path', 'lang', 'is_active', 'created_at').where({ user_id: req.user.id }).orderBy('is_active', 'desc').orderBy('created_at', 'desc'));
+            let cvs = await withDb((db) => db('cvs').select('id', 'name', 'path', 'lang', 'is_active', 'is_primary', 'created_at').where({ user_id: req.user.id }).orderBy('is_primary', 'desc').orderBy('is_active', 'desc').orderBy('created_at', 'desc'));
             if (cvs.length === 0) {
                 try {
                     await importDefaultCvs(req.user.id);
-                    cvs = await withDb((db) => db('cvs').select('id', 'name', 'path', 'lang', 'is_active', 'created_at').where({ user_id: req.user.id }).orderBy('is_active', 'desc').orderBy('created_at', 'desc'));
+                    cvs = await withDb((db) => db('cvs').select('id', 'name', 'path', 'lang', 'is_active', 'is_primary', 'created_at').where({ user_id: req.user.id }).orderBy('is_primary', 'desc').orderBy('is_active', 'desc').orderBy('created_at', 'desc'));
                 } catch (importErr) {
                     console.warn('⚠️ Auto-import CVs échoué:', importErr.message);
                 }
@@ -648,8 +661,9 @@ function createApp() {
 
     app.delete('/api/cvs/:id', async (req, res) => {
         try {
-            const cv = await withDb((db) => db('cvs').where({ id: req.params.id, user_id: req.user.id }).select('path').first());
+            const cv = await withDb((db) => db('cvs').where({ id: req.params.id, user_id: req.user.id }).select('path', 'is_primary').first());
             if (!cv) return res.status(404).json({ error: 'CV introuvable.' });
+            if (cv.is_primary) return res.status(403).json({ error: 'Le CV principal ne peut pas être supprimé.' });
             await withDb((db) => db('cvs').where({ id: req.params.id, user_id: req.user.id }).del());
             // Supprimer le fichier physique si le chemin est dans cv/storage
             if (cv.path) {
@@ -676,6 +690,12 @@ function createApp() {
             const cvName = requiredText(name, 'Nom du CV');
             const cvContent = requiredText(content, 'Contenu du CV');
 
+            // Check if user already has a primary CV (admin users)
+            const existingPrimaryCv = await withDb((db) => db('cvs').where({ user_id: req.user.id, is_primary: 1 }).first());
+            if (existingPrimaryCv) {
+                return res.status(403).json({ error: 'Un CV principal existe déjà. Importez des CVs optimisés plutôt que de remplacer le CV principal.' });
+            }
+
             const cvDir = path.join(__dirname, '..', 'cv', 'storage');
             const fs = await import('node:fs/promises');
             await fs.mkdir(cvDir, { recursive: true });
@@ -701,7 +721,8 @@ function createApp() {
                 user_id: req.user.id,
                 name: cvName,
                 path: destPath,
-                is_active: 0
+                is_active: 0,
+                is_primary: 0
             }));
 
             const cv = await withDb((db) => db('cvs').where({ id }).first());

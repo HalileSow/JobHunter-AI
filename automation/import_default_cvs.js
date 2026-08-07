@@ -5,13 +5,24 @@ import { fileURLToPath } from 'node:url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
-const CV_FILES = ['cv_fr.md', 'cv_en.md', 'cv_de.md'];
-const CV_META = {
-    cv_fr: { name: 'CV Français', lang: 'fr' },
-    cv_en: { name: 'CV English', lang: 'en' },
-    cv_de: { name: 'CV Deutsch', lang: 'de' }
-};
+/**
+ * Check if a user is a SUPER_ADMIN.
+ */
+async function isSuperAdmin(db, userId) {
+    const user = await db('users').where({ id: userId }).select('role').first();
+    return user?.role === 'SUPER_ADMIN';
+}
 
+/**
+ * Import default CVs — architecture CV principal / copies optimisées.
+ *
+ * - SUPER_ADMIN : reçoit un seul CV principal (is_primary=1) depuis cv/cv_fr.md.
+ *   C'est le CV source de vérité, jamais modifié. L'IA en crée des copies
+ *   optimisées pour chaque candidature.
+ * - Utilisateurs normaux : aucun CV importé automatiquement.
+ *   Chaque utilisateur doit importer son propre CV lors de l'inscription
+ *   ou depuis la page "Mes CVs".
+ */
 export async function importDefaultCvs(userId = null) {
     const db = await initDb();
     const cvDir = path.join(__dirname, '..', 'cv', 'storage');
@@ -24,37 +35,31 @@ export async function importDefaultCvs(userId = null) {
         const existingCvs = await db('cvs').where({ user_id: user.id });
         if (existingCvs.length > 0) continue;
 
-        for (const file of CV_FILES) {
-            const srcPath = path.join(__dirname, '..', 'cv', file);
-            const baseName = file.replace('.md', '');
-            const meta = CV_META[baseName] || { name: file, lang: 'fr' };
+        const isAdmin = await isSuperAdmin(db, user.id);
 
+        if (isAdmin) {
+            // Admin : import du CV principal (source de vérité)
+            const srcPath = path.join(__dirname, '..', 'cv', 'cv_fr.md');
             try {
                 await fs.access(srcPath);
-            } catch {
-                continue;
-            }
-
-            const destPath = path.join(cvDir, `${user.id}_${file}`);
-            try {
+                const destPath = path.join(cvDir, `${user.id}_cv_fr.md`);
                 await fs.copyFile(srcPath, destPath);
                 await db('cvs').insert({
                     user_id: user.id,
-                    name: meta.name,
+                    name: 'CV Principal',
                     path: destPath,
-                    lang: meta.lang,
-                    is_active: 0
+                    lang: 'fr',
+                    is_active: 1,
+                    is_primary: 1
                 });
-                console.log(`  ✓ Imported ${meta.name} for user ${user.id}`);
+                console.log(`  ✓ Imported master CV for admin user ${user.id}`);
             } catch (err) {
-                console.warn(`  ⚠ Could not import ${file} for user ${user.id}: ${err.message}`);
+                console.warn(`  ⚠ Could not import master CV for admin ${user.id}: ${err.message}`);
             }
-        }
-
-        const frCv = await db('cvs').where({ user_id: user.id }).where('name', 'like', '%Français%').first();
-        if (frCv) {
-            await db('cvs').where({ user_id: user.id }).update({ is_active: 0 });
-            await db('cvs').where({ id: frCv.id }).update({ is_active: 1 });
+        } else {
+            // Utilisateur normal : aucun CV importé automatiquement.
+            // Il doit importer son propre CV manuellement.
+            console.log(`  ℹ No CV imported for user ${user.id} (must upload their own CV)`);
         }
     }
 }

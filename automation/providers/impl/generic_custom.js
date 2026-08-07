@@ -67,11 +67,16 @@ export class GenericCustomProvider extends BaseProvider {
                     provider.link_selector
                 );
 
+                const baseUrl = new URL(searchUrl);
                 jobs.forEach((job) => {
+                    let link = job.link || '';
+                    if (link && !link.startsWith('http')) {
+                        link = `${baseUrl.protocol}//${baseUrl.host}${link.startsWith('/') ? '' : '/'}${link}`;
+                    }
                     results.push({
                         title: job.title,
                         company: job.company || provider.name || 'Entreprise inconnue',
-                        link: job.link,
+                        link,
                         location: city ? `${city}, ${country}` : country,
                         city: city || '',
                         salary: 'N/A',

@@ -30,7 +30,7 @@ export class FranceTravailProvider extends BaseProvider {
             authParams.append('grant_type', 'client_credentials');
             authParams.append('client_id', clientId);
             authParams.append('client_secret', clientSecret);
-            authParams.append('scope', 'api_offresdemploiv1 o2dsoffre');
+            authParams.append('scope', 'o2dsoffre');
 
             const tokenRes = await axios.post(tokenUrl, authParams.toString(), {
                 headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
@@ -86,18 +86,40 @@ export class FranceTravailProvider extends BaseProvider {
     async searchPublicFallback(jobTitle, keywords, limit) {
         try {
             const query = encodeURIComponent(`${jobTitle} ${keywords}`.trim());
-            const url = `https://candidat.francetravail.fr/offres/recherche?motsCles=${query}`;
+            const searchUrl = `https://candidat.francetravail.fr/offres/recherche?motsCles=${query}`;
+
+            const { data } = await axios.get(
+                `https://api.francetravail.io/partenaire/offresdemploi/v2/offres/search?motsCles=${query}&range=0-${Math.min(limit - 1, 49)}`,
+                { timeout: 8000, headers: { 'Accept': 'application/json' } }
+            ).catch(() => ({ data: null }));
+
+            if (data?.resultats?.length) {
+                return data.resultats.slice(0, limit).map(off => ({
+                    title: off.intitule,
+                    company: off.entreprise?.nom || 'Entreprise anonyme',
+                    link: off.origineOffre?.urlOrigine || `https://candidat.francetravail.fr/offres/${off.id}`,
+                    location: off.lieuTravail?.libelle || 'France',
+                    city: off.lieuTravail?.libelle || '',
+                    salary: off.salaire?.libelle || 'Non spécifié',
+                    contract_type: off.typeContratLibelle || off.typeContrat || 'Non spécifié',
+                    date_posted: off.dateCreation ? off.dateCreation.split('T')[0] : new Date().toISOString().split('T')[0],
+                    provider: this.id,
+                    provider_name: this.name,
+                    description: off.description || ''
+                }));
+            }
+
             return [{
-                title: `${jobTitle} (Recherche France Travail)`,
-                company: 'Partenaires France Travail',
-                link: url,
+                title: `Recherche France Travail : ${jobTitle}`,
+                company: 'France Travail',
+                link: searchUrl,
                 location: 'France',
-                salary: 'Selon profil',
-                contract_type: 'CDI / CDD',
+                salary: 'Non spécifié',
+                contract_type: 'Non spécifié',
                 date_posted: new Date().toISOString().split('T')[0],
                 provider: this.id,
                 provider_name: this.name,
-                description: `Portail officiel France Travail pour le poste ${jobTitle}.`
+                description: `Lien vers les résultats de recherche France Travail pour "${jobTitle}". Configurez FRANCE_TRAVAIL_CLIENT_ID et FRANCE_TRAVAIL_CLIENT_SECRET dans .env pour accéder aux offres détaillées via l'API officielle.`
             }];
         } catch (err) {
             return [];

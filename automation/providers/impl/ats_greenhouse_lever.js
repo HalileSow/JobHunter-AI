@@ -26,7 +26,9 @@ export class AtsProvider extends BaseProvider {
         ];
 
         const results = [];
-        const term = (jobTitle + ' ' + keywords).toLowerCase();
+        const MAX_PER_COMPANY = 5;
+        const titleLower = jobTitle.toLowerCase();
+        const titleWords = titleLower.split(/\s+/).filter(w => w.length > 2);
 
         for (const board of sampleAtsBoards) {
             try {
@@ -34,11 +36,13 @@ export class AtsProvider extends BaseProvider {
                     const url = `https://boards-api.greenhouse.io/v1/boards/${board.boardToken}/jobs`;
                     const res = await axios.get(url, { timeout: 5000 });
                     if (res.data && res.data.jobs) {
-                        const matched = res.data.jobs.filter(j => 
-                            j.title.toLowerCase().includes(jobTitle.toLowerCase()) || 
-                            keywords.split(' ').some(k => k && j.title.toLowerCase().includes(k.toLowerCase()))
-                        );
-                        matched.forEach(j => {
+                        const matched = res.data.jobs.filter(j => {
+                            const jt = j.title.toLowerCase();
+                            if (jt.includes(titleLower)) return true;
+                            const matchCount = titleWords.filter(w => jt.includes(w)).length;
+                            return titleWords.length > 0 && matchCount >= Math.ceil(titleWords.length * 0.6);
+                        });
+                        matched.slice(0, MAX_PER_COMPANY).forEach(j => {
                             const locName = j.location?.name || 'International / Multiple';
                             const isRemote = locName.toLowerCase().includes('remote') || locName.toLowerCase().includes('virtual');
                             results.push({

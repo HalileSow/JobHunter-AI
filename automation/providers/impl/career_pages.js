@@ -61,11 +61,24 @@ export class CareerPagesProvider extends BaseProvider {
                     await page.evaluate(() => window.scrollBy(0, window.innerHeight / 2));
                     await page.waitForTimeout(1500);
 
-                    // OPTIMISATION MÉMOIRE : Limiter la taille du texte extrait à 4000 caractères
-                    // pour réduire la mémoire utilisée par les prompts IA
                     const bodyText = await page.innerText('body');
                     if (bodyText.length < 150) continue;
                     const truncatedText = bodyText.substring(0, 4000);
+
+                    const pageLinks = await page.evaluate(() => {
+                        return Array.from(document.querySelectorAll('a[href]'))
+                            .filter(a => {
+                                const text = (a.innerText || '').trim();
+                                const href = a.href || '';
+                                return text.length > 5 && href.startsWith('http') && !href.includes('javascript:');
+                            })
+                            .slice(0, 30)
+                            .map(a => ({ text: (a.innerText || '').trim().substring(0, 100), url: a.href }));
+                    });
+
+                    const linksSection = pageLinks.length > 0
+                        ? `\nLiens visibles sur la page :\n${pageLinks.map(l => `- "${l.text}" → ${l.url}`).join('\n')}`
+                        : '';
 
                     const filters = [
                         city ? `ville="${city}"` : '',
@@ -78,14 +91,15 @@ export class CareerPagesProvider extends BaseProvider {
 Voici le contenu texte brut du site carrières de l'entreprise "${cp.company}" :
 ---
 ${truncatedText}
----
+---${linksSection}
 Extrais jusqu'à 3 offres d'emploi qui correspondent au poste "${jobTitle}" / mots-clés "${keywords}"${filters ? `. Filtres supplémentaires : ${filters}` : ''}.
+Pour chaque offre, utilise le lien URL réel de l'offre si disponible dans la liste des liens ci-dessus. Sinon utilise "${searchUrl}".
 Format JSON strict :
 [
   {
     "title": "Titre exact de l'offre",
     "company": "${cp.company}",
-    "link": "${searchUrl}",
+    "link": "URL réelle de l'offre individuelle",
     "location": "${country}",
     "city": "${city}",
     "contract_type": "CDI/CDD",

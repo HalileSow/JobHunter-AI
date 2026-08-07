@@ -3,6 +3,7 @@ import { defaultRegistry } from './providers/registry.js';
 import { analyzeJob, selectBestCv } from './ai_engine.js';
 import { getAllCvs } from './cv_manager.js';
 import { exportLetterToPdf } from './pdf_exporter.js';
+import { buildPdfFileName } from './sanitize_filename.js';
 import { sendJobNotification } from './notifications.js';
 import { initDb } from './db.js';
 import path from 'path';
@@ -395,8 +396,7 @@ export async function runFullJobHunterSearch({ country, jobTitle, keywords = '',
 
                 aiResult = await analyzeJob(offerText, selectedCv.path, lang);
 
-                const safeCompany = (job.company || 'Entreprise').replace(/[^a-zA-Z0-9_-]/g, '_');
-                const pdfFilename = `${userId}_${safeCompany}_${Date.now()}_${lang}.pdf`;
+                const pdfFilename = buildPdfFileName('cover', job.company, lang);
                 pdfPath = path.resolve(__dirname, `../cover_letters/generated/${pdfFilename}`);
                 await fs.mkdir(path.dirname(pdfPath), { recursive: true });
                 await exportLetterToPdf(aiResult.letter, job.company, pdfPath);

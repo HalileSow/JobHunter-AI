@@ -4,11 +4,9 @@ import { fileURLToPath } from 'url';
 import { getBrowser, releaseBrowser, createPageWithRetry } from './browser_pool.js';
 import { exportCvToPdf } from './cv_exporter.js';
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
+import { sanitizeFilename, buildPdfFileName } from './sanitize_filename.js';
 
-function sanitizeName(value = '') {
-    return String(value).replace(/[^a-zA-Z0-9_-]+/g, '_').replace(/^_+|_+$/g, '') || 'document';
-}
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 function pickProfileValue(profile, keys) {
     for (const key of keys) {
@@ -56,14 +54,15 @@ async function readCvContent(cvPath) {
 }
 
 export async function buildApplicationDocuments({ job, profile, selectedCvPath, letterText, letterPath, lang = 'fr', outputDir = null }) {
-    const safeCompany = sanitizeName(job?.company || 'company');
-    const safeTitle = sanitizeName(job?.title || 'job');
+    const safeCompany = sanitizeFilename(job?.company || 'company', { maxLen: 30 });
+    const safeTitle = sanitizeFilename(job?.title || 'job', { maxLen: 30 });
     const timestamp = Date.now();
     const targetDir = outputDir ? path.resolve(outputDir) : path.resolve(__dirname, '../cover_letters/generated/applications');
     await fs.mkdir(targetDir, { recursive: true });
 
     const cvContent = await readCvContent(selectedCvPath);
-    const tailoredCvPath = path.join(targetDir, `${safeCompany}_${safeTitle}_${timestamp}_${lang}_cv.pdf`);
+    const shortName = `${safeCompany}_${safeTitle}`.substring(0, 65).replace(/_$/, '');
+    const tailoredCvPath = path.join(targetDir, `${shortName}_${timestamp}_${lang}_cv.pdf`);
 
     await exportCvToPdf(
         cvContent || 'CV indisponible.',

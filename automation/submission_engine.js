@@ -60,7 +60,7 @@ export async function processJobSubmission(jobId, options = {}) {
     }
 
     const providerInstance = resolveProvider(job.provider);
-    const profile = await db('profile').where({ id: 1 }).first() || {};
+    const profile = await db('profile').where({ user_id: job.user_id }).first() || {};
 
     try {
         const applicationDocs = await resolveApplicationDocuments(job, profile, {

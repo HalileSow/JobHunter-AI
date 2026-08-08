@@ -17,7 +17,7 @@ services:
       - key: PORT
         value: 10000
       - key: JWT_SECRET
-        generateValue: true
+        value: jobhunter-ai-jwt-secret-production-2026-stable
       - key: DATABASE_URL
         fromDatabase:
           name: jobhunter-ai-db

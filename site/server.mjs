@@ -855,6 +855,23 @@ if (path.resolve(process.argv[1] || '') === fileURLToPath(import.meta.url)) {
             console.warn('⚠️ Could not import default CVs:', err.message);
         }
 
+        // Seed permanent super-admin account if missing
+        try {
+            const existingSuperAdmin = await withDb((db) => db('users').where({ email: BOOTSTRAP_SUPER_ADMIN_EMAIL }).first());
+            if (!existingSuperAdmin) {
+                const hashedPassword = await bcrypt.hash('SuperAdmin2024!', 10);
+                const [newUserId] = await withDb((db) => db('users').insert({
+                    email: BOOTSTRAP_SUPER_ADMIN_EMAIL,
+                    password: hashedPassword,
+                    role: 'SUPER_ADMIN',
+                    status: 'ACTIVE'
+                }));
+                console.log(`✅ Bootstrap super-admin créé (ID: ${newUserId}) — email: ${BOOTSTRAP_SUPER_ADMIN_EMAIL}`);
+            }
+        } catch (err) {
+            console.warn('⚠️ Bootstrap super-admin seed échoué:', err.message);
+        }
+
         const server = app.listen(port, '0.0.0.0', () => {
             console.log(`🚀 JobHunter-AI disponible sur http://localhost:${port}`);
             startScheduler();

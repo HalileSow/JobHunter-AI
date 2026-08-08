@@ -654,10 +654,13 @@ function createApp() {
     app.put('/api/cvs/:id/active', async (req, res) => {
         try {
             const found = await withDb(async (db) => {
-                const cv = await db('cvs').where({ id: req.params.id, user_id: req.user.id }).select('id').first();
+                const cv = await db('cvs').where({ id: req.params.id, user_id: req.user.id }).select('id', 'is_primary').first();
                 if (!cv) return false;
+                // On ne touche jamais au CV principal (is_primary=1)
+                if (cv.is_primary) return true; // déjà le CV principal, rien à faire
                 await db.transaction(async (trx) => {
-                    await trx('cvs').where({ user_id: req.user.id }).update({ is_active: 0 });
+                    // Désactiver les CVs non-primary uniquement
+                    await trx('cvs').where({ user_id: req.user.id }).where('is_primary', 0).update({ is_active: 0 });
                     await trx('cvs').where({ id: req.params.id, user_id: req.user.id }).update({ is_active: 1 });
                 });
                 return true;
@@ -700,11 +703,10 @@ function createApp() {
             const cvName = requiredText(name, 'Nom du CV');
             const cvContent = requiredText(content, 'Contenu du CV');
 
-            // Check if user already has a primary CV (admin users)
+            // Le CV uploadé n'est JAMAIS marqué comme primary.
+            // Le CV principal (is_primary=1) est protégé et non remplaçable.
+            // Les CVs uploadés sont des copies/version alternatives (is_primary=0).
             const existingPrimaryCv = await withDb((db) => db('cvs').where({ user_id: req.user.id, is_primary: 1 }).first());
-            if (existingPrimaryCv) {
-                return res.status(403).json({ error: 'Un CV principal existe déjà. Importez des CVs optimisés plutôt que de remplacer le CV principal.' });
-            }
 
             const cvDir = path.join(__dirname, '..', 'cv', 'storage');
             const fs = await import('node:fs/promises');
@@ -731,7 +733,7 @@ function createApp() {
                 user_id: req.user.id,
                 name: cvName,
                 path: destPath,
-                is_active: 0,
+                is_active: existingPrimaryCv ? 0 : 1, // Si pas de CV primary, celui-ci devient actif par défaut
                 is_primary: 0
             }));
 

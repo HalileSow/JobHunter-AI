@@ -5,19 +5,28 @@ import { fileURLToPath } from 'url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
-export async function addCv(userId, name, filePath) {
+export async function addCv(userId, name, filePath, options = {}) {
     const db = await initDb();
     const destPath = path.resolve(__dirname, '../cv/storage', `${userId}_${path.basename(filePath)}`);
     await fs.copyFile(filePath, destPath);
 
-    await db('cvs').insert({ user_id: userId, name, path: destPath });
+    const existingPrimary = await db('cvs').where({ user_id: userId, is_primary: 1 }).first();
+    await db('cvs').insert({
+        user_id: userId,
+        name,
+        path: destPath,
+        lang: options.lang || 'fr',
+        is_active: existingPrimary ? 0 : 1,
+        is_primary: 0
+    });
     console.log(`✅ CV ${name} importé pour l'utilisateur ${userId}.`);
 }
 
 export async function setActiveCv(userId, cvId) {
     const db = await initDb();
     await db.transaction(async (trx) => {
-        await trx('cvs').where({ user_id: userId }).update({ is_active: 0 });
+        // Ne désactiver que les CVs non-primary
+        await trx('cvs').where({ user_id: userId }).where('is_primary', 0).update({ is_active: 0 });
         await trx('cvs').where({ user_id: userId, id: cvId }).update({ is_active: 1 });
     });
     console.log(`✅ CV ${cvId} défini comme actif pour l'utilisateur ${userId}.`);

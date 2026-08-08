@@ -72,6 +72,7 @@ test('processJobSubmission enregistre une tentative réussie avec CV adapté', a
 
     await db('profile').insert({
         id: 1,
+        user_id: 1,
         first_name: 'Ada',
         last_name: 'Lovelace',
         email: 'ada@example.com',
@@ -89,14 +90,17 @@ test('processJobSubmission enregistre une tentative réussie avec CV adapté', a
     await writeFile(cvSourcePath, '# CV source\n\nExperience');
 
     const [cvId] = await db('cvs').insert({
+        user_id: 1,
         name: 'CV source',
         path: cvSourcePath,
-        is_active: 1
+        is_active: 1,
+        is_primary: 0
     });
 
     await mkdir(path.join(directory, 'documents'), { recursive: true });
 
     const [jobId] = await db('jobs').insert({
+        user_id: 1,
         title: 'Dev Node.js',
         company: 'Example',
         link: 'https://example.com/apply',
@@ -174,6 +178,7 @@ test('processJobSubmission enregistre une tentative préparée quand l\'auto-app
 
     await db('profile').insert({
         id: 1,
+        user_id: 1,
         first_name: 'Ada',
         last_name: 'Lovelace',
         email: 'ada@example.com',
@@ -191,12 +196,15 @@ test('processJobSubmission enregistre une tentative préparée quand l\'auto-app
     await writeFile(cvSourcePath, '# CV source\n\nExperience');
 
     const [cvId] = await db('cvs').insert({
+        user_id: 1,
         name: 'CV source',
         path: cvSourcePath,
-        is_active: 1
+        is_active: 1,
+        is_primary: 0
     });
 
     const [jobId] = await db('jobs').insert({
+        user_id: 1,
         title: 'Dev Node.js',
         company: 'Example',
         link: 'https://example.com/apply',

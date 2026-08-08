@@ -25,7 +25,8 @@ export async function runSearch(country, jobTitle, keywords = '', lang = 'fr', s
         minSalary: advancedFilters.minSalary || '',
         maxSalary: advancedFilters.maxSalary || '',
         lang,
-        selectedProviderIds: selectedProviders
+        selectedProviderIds: selectedProviders,
+        userId: advancedFilters.userId || null
     });
 
     console.log(`\n✅ Recherche terminée. ${searchResult.jobsFound} offres uniques analysées et classées par IA.\n`);

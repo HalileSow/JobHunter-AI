@@ -46,19 +46,28 @@ export async function getActiveCvPath(userId) {
 export async function getPrimaryCvPath(userId) {
     const db = await initDb();
     const cv = await db('cvs').where({ user_id: userId, is_primary: 1 }).first();
+    if (cv) {
+        console.log(`[CV Manager] getPrimaryCvPath(${userId}) → trouvé: id=${cv.id}, path=${cv.path}`);
+    } else {
+        console.log(`[CV Manager] getPrimaryCvPath(${userId}) → aucun CV principal`);
+    }
     return cv ? cv.path : null;
 }
 
 /**
  * Create an optimized copy of the primary CV for a specific application.
  * The copy is linked to the job and can be translated/adapted.
+ * NEVER modifies the original primary CV.
  */
 export async function createOptimizedCvCopy(userId, jobId, targetLang = 'fr') {
     const db = await initDb();
     const primaryCv = await db('cvs').where({ user_id: userId, is_primary: 1 }).first();
     if (!primaryCv) {
+        console.log(`[CV Manager] createOptimizedCvCopy(${userId}, job=${jobId}) → ERREUR: aucun CV principal`);
         throw new Error('Aucun CV principal trouvé pour créer une copie optimisée.');
     }
+
+    console.log(`[CV Manager] createOptimizedCvCopy(${userId}, job=${jobId}) → source: primary CV id=${primaryCv.id}, path=${primaryCv.path}`);
 
     const cvDir = path.join(__dirname, '..', 'cv', 'storage');
     await fs.mkdir(cvDir, { recursive: true });
@@ -67,8 +76,9 @@ export async function createOptimizedCvCopy(userId, jobId, targetLang = 'fr') {
     const fileName = `${userId}_${jobId}_${timestamp}_optimized_${targetLang}.md`;
     const destPath = path.join(cvDir, fileName);
 
-    // Copy the primary CV content
+    // Copy the primary CV content (read-only from primary, write to new file)
     await fs.copyFile(primaryCv.path, destPath);
+    console.log(`[CV Manager] createOptimizedCvCopy → copie créée: ${destPath}`);
 
     // Insert the optimized copy into DB
     const [id] = await db('cvs').insert({
@@ -79,6 +89,16 @@ export async function createOptimizedCvCopy(userId, jobId, targetLang = 'fr') {
         is_active: 0,
         is_primary: 0
     });
+
+    console.log(`[CV Manager] createOptimizedCvCopy → enregistré en BDD: id=${id}, is_primary=0 (jamais le CV original)`);
+
+    // Verify the primary CV is still intact
+    const primaryCheck = await db('cvs').where({ user_id: userId, is_primary: 1 }).first();
+    if (!primaryCheck) {
+        console.error(`[CV Manager] createOptimizedCvCopy → ALERTE: CV principal introuvable après copie!`);
+    } else {
+        console.log(`[CV Manager] createOptimizedCvCopy → vérification: CV principal toujours intact (id=${primaryCheck.id})`);
+    }
 
     return { id, path: destPath };
 }

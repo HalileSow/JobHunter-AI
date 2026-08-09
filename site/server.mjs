@@ -358,19 +358,27 @@ function createApp() {
             const schedule = await withDb((db) => db('scheduled_searches').where({ id: req.params.id, user_id: req.user.id }).first());
             if (!schedule) return res.status(404).json({ error: 'Recherche planifiée introuvable.' });
 
+            // Mark as running immediately
+            await withDb((db) => db('scheduled_searches').where({ id: schedule.id }).update({ last_status: 'running', last_error: null }));
+
             res.json({ success: true, message: 'Exécution déclenchée.' });
 
             // Force immediate execution in background — bypass cron/next_run_at check
             (async () => {
-                const { runFullJobHunterSearch } = await import('../automation/scheduler.js').then(() => import('../automation/search_engine.js'));
+                const { runFullJobHunterSearch } = await import('../automation/search_engine.js');
                 const { processJobSubmission } = await import('../automation/submission_engine.js');
                 const { notifyUserJob } = await import('../automation/notifications.js');
                 const { computeNextRun } = await import('../automation/scheduler.js');
                 const db = await initDb();
-                const now = new Date();
 
                 const userId = schedule.user_id || (await db('users').where({ role: 'SUPER_ADMIN' }).first())?.id;
-                if (!userId) { console.error(`❌ [API] Aucun user_id pour schedule #${schedule.id}`); return; }
+                if (!userId) {
+                    console.error(`❌ [API] Aucun user_id pour schedule #${schedule.id}`);
+                    await db('scheduled_searches').where({ id: schedule.id }).update({ last_status: 'error', last_error: 'Aucun user_id' });
+                    return;
+                }
+
+                console.log(`🚀 [API] Exécution manuelle schedule #${schedule.id} "${schedule.name}" pour user_id=${userId}`);
 
                 const [inserted] = await db('search_runs').insert({
                     country: schedule.country, title: schedule.title,
@@ -404,14 +412,22 @@ function createApp() {
                     const nextRun = computeNextRun(schedule.cron_expression);
                     await db('scheduled_searches').where({ id: schedule.id }).update({
                         last_run_at: db.fn.now(), next_run_at: nextRun ? nextRun.toISOString() : null,
-                        total_runs: db.raw('total_runs + 1'), last_status: 'success'
+                        total_runs: db.raw('total_runs + 1'), last_status: 'success',
+                        last_raw_jobs_count: result.rawJobsFound || 0,
+                        last_unique_jobs_count: result.uniqueJobsFound || 0,
+                        last_analyzed_jobs_count: result.jobsAnalyzed || 0,
+                        last_new_jobs_count: result.jobsSaved || 0,
+                        last_duplicate_jobs_count: result.duplicateJobsSkipped || 0,
+                        last_error: null
                     });
+
+                    console.log(`✅ [API] Exécution manuelle terminée : ${result.rawJobsFound} brutes, ${result.jobsSaved} sauvegardées`);
                 } catch (error) {
                     console.error(`❌ [API] Erreur exécution manuelle schedule #${schedule.id}: ${error.message}`);
                     await db('search_runs').where({ id: runId }).update({ status: 'failed', error: error.message, finished_at: db.fn.now() });
                     await db('scheduled_searches').where({ id: schedule.id }).update({ last_status: 'error', last_error: error.message });
                 }
-            })().catch((err) => console.error(`❌ [API] Erreur exécution manuelle: ${err.message}`));
+            })().catch((err) => console.error(`❌ [API] Erreur critique exécution manuelle: ${err.stack || err.message}`));
         } catch {
             res.status(500).json({ error: 'Impossible de déclencher l\'exécution.' });
         }

@@ -1,6 +1,7 @@
 import { defaultRegistry } from './providers/registry.js';
 import { initDb } from './db.js';
 import { runFullJobHunterSearch } from './search_engine.js';
+import { notifyUserJob } from './notifications.js';
 
 function resolveProviderIds(selectedProviderIds = []) {
     if (Array.isArray(selectedProviderIds) && selectedProviderIds.length > 0) {
@@ -86,6 +87,13 @@ export async function executeScheduledSearchRun({
             last_new_jobs_count: result.jobsSaved || 0,
             last_duplicate_jobs_count: result.duplicateJobsSkipped || 0
         });
+
+        // Notifications webhook pour les nouvelles offres (non-bloquant)
+        if (userId && result.jobs?.length > 0) {
+            notifyUserJob({ db, userId, jobs: result.jobs }).catch((err) =>
+                console.warn(`⚠️ [Notifications] Erreur envoi webhooks: ${err.message}`)
+            );
+        }
 
         return {
             success: true,

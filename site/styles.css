@@ -547,3 +547,96 @@ header p {
     100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(16, 185, 129, 0); }
 }
 
+/* === WEBHOOKS / NOTIFICATIONS === */
+.webhook-card {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 14px 16px;
+    background: var(--bg-card);
+    border-radius: 10px;
+    border-left: 4px solid #6366f1;
+    margin-bottom: 10px;
+    transition: border-color 0.2s;
+}
+.webhook-card.disabled {
+    opacity: 0.5;
+    border-left-color: #475569;
+}
+.webhook-card.platform-telegram { border-left-color: #0088cc; }
+.webhook-card.platform-slack { border-left-color: #4a154b; }
+
+.webhook-info { flex: 1; min-width: 0; }
+.webhook-info strong { font-size: 1.05rem; }
+.webhook-url {
+    color: #9ca3af;
+    font-size: 0.8rem;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 400px;
+    display: block;
+    margin-top: 2px;
+}
+.webhook-meta {
+    color: #a5b4fc;
+    font-size: 0.8rem;
+    margin-top: 4px;
+    display: flex;
+    gap: 12px;
+    flex-wrap: wrap;
+    align-items: center;
+}
+
+.platform-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 2px 8px;
+    border-radius: 6px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    text-transform: uppercase;
+}
+.platform-badge.telegram { background: rgba(0,136,204,0.15); color: #38bdf8; }
+.platform-badge.slack { background: rgba(74,21,75,0.2); color: #c084fc; }
+
+.webhook-actions {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    flex-shrink: 0;
+    margin-left: 12px;
+}
+
+.webhook-toggle {
+    position: relative;
+    width: 40px;
+    height: 22px;
+    background: #475569;
+    border-radius: 11px;
+    cursor: pointer;
+    transition: background 0.2s;
+    border: none;
+    padding: 0;
+}
+.webhook-toggle.active { background: #10b981; }
+.webhook-toggle::after {
+    content: '';
+    position: absolute;
+    top: 2px;
+    left: 2px;
+    width: 18px;
+    height: 18px;
+    background: white;
+    border-radius: 50%;
+    transition: transform 0.2s;
+}
+.webhook-toggle.active::after { transform: translateX(18px); }
+
+@media (max-width: 640px) {
+    .webhook-card { flex-direction: column; align-items: flex-start; gap: 10px; }
+    .webhook-actions { margin-left: 0; }
+    .webhook-url { max-width: 100%; }
+}
+

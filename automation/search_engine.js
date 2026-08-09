@@ -4,7 +4,6 @@ import { analyzeJob, selectBestCv } from './ai_engine.js';
 import { getAllCvs, getPrimaryCvPath, getActiveCvPath } from './cv_manager.js';
 import { exportLetterToPdf } from './pdf_exporter.js';
 import { buildPdfFileName } from './sanitize_filename.js';
-import { sendJobNotification } from './notifications.js';
 import { initDb } from './db.js';
 import path from 'path';
 import fs from 'fs/promises';
@@ -342,20 +341,29 @@ export async function runFullJobHunterSearch({ country, jobTitle, keywords = '',
     let referenceCvId = null;
     let cvLoadStatus = 'not_found'; // not_found | found | empty | loaded
     let cvLoadError = null;
+    let cvContentLoaded = false;
+    let userRole = 'unknown';
+
+    // Récupérer le rôle de l'utilisateur pour les logs
+    try {
+        const userRow = await db('users').where({ id: userId }).first('role', 'email');
+        userRole = userRow?.role || 'unknown';
+        console.log(`[DIAG][ANALYSE] user_id=${userId}, rôle=${userRole}, email=${userRow?.email || 'N/A'}`);
+    } catch { /* ignore */ }
 
     try {
         // Étape 1 : chercher le CV principal
         const primaryPath = await getPrimaryCvPath(userId);
         if (primaryPath) {
-            console.log(`[CV] CV principal trouvé pour user ${userId} — path: ${primaryPath}`);
+            console.log(`[DIAG][CV] user_id=${userId}, rôle=${userRole}, CV principal trouvé — path: ${primaryPath}`);
             cvLoadStatus = 'found';
             referenceCvPath = primaryPath;
         } else {
-            console.log(`[CV] Aucun CV principal pour user ${userId}, fallback sur CV actif`);
+            console.log(`[DIAG][CV] user_id=${userId}, rôle=${userRole}, aucun CV principal, fallback sur CV actif`);
             // Étape 2 : fallback sur le CV actif
             const activePath = await getActiveCvPath(userId);
             if (activePath) {
-                console.log(`[CV] CV actif trouvé pour user ${userId} — path: ${activePath}`);
+                console.log(`[DIAG][CV] user_id=${userId}, CV actif trouvé — path: ${activePath}`);
                 cvLoadStatus = 'found';
                 referenceCvPath = activePath;
                 // Récupérer l'ID du CV actif pour selected_cv_id
@@ -371,11 +379,12 @@ export async function runFullJobHunterSearch({ country, jobTitle, keywords = '',
             try {
                 const cvContent = await fs.readFile(referenceCvPath, 'utf-8');
                 if (!cvContent || cvContent.trim().length === 0) {
-                    console.log(`[CV] CV trouvé mais VIDE pour user ${userId} — path: ${referenceCvPath}`);
+                    console.log(`[DIAG][CV] user_id=${userId}, CV trouvé mais VIDE — path: ${referenceCvPath}`);
                     cvLoadStatus = 'empty';
                     referenceCvPath = null;
                 } else {
-                    console.log(`[CV] CV chargé avec succès pour user ${userId} — ${cvContent.trim().length} caractères`);
+                    cvContentLoaded = true;
+                    console.log(`[DIAG][CV] user_id=${userId}, rôle=${userRole}, CV chargé avec succès — ${cvContent.trim().length} caractères, path: ${referenceCvPath}`);
                     cvLoadStatus = 'loaded';
                     // Récupérer l'ID du CV principal si pas déjà fait
                     if (!referenceCvId) {
@@ -385,16 +394,19 @@ export async function runFullJobHunterSearch({ country, jobTitle, keywords = '',
                 }
             } catch (readErr) {
                 cvLoadError = readErr.message;
-                console.log(`[CV] Erreur lecture CV pour user ${userId} — ${readErr.message}`);
+                console.log(`[DIAG][CV] user_id=${userId}, erreur lecture CV — ${readErr.message}`);
                 referenceCvPath = null;
             }
         }
     } catch (err) {
         cvLoadError = err.message;
-        console.log(`[CV] Erreur récupération CV pour user ${userId} — ${err.message}`);
+        console.log(`[DIAG][CV] user_id=${userId}, erreur récupération CV — ${err.message}`);
     }
 
     const hasReferenceCv = cvLoadStatus === 'loaded';
+
+    // Résumé final du diagnostic CV avant l'analyse
+    console.log(`[DIAG][ANALYSE] Résumé: user_id=${userId}, rôle=${userRole}, hasReferenceCv=${hasReferenceCv}, cvLoadStatus=${cvLoadStatus}, cvContentLoaded=${cvContentLoaded}, referenceCvPath=${referenceCvPath || 'null'}, referenceCvId=${referenceCvId || 'null'}`);
 
     const processedJobs = [];
     let analyzedCount = 0;
@@ -413,13 +425,7 @@ export async function runFullJobHunterSearch({ country, jobTitle, keywords = '',
             continue;
         }
 
-        const skipAiAnalysis = aiAnalysisCount >= MAX_AI_ANALYSIS && hasReferenceCv;
-        if (skipAiAnalysis) {
-            console.log(`⏩ Limite d'analyses IA atteinte, score par défaut pour : ${job.title} chez ${job.company}`);
-        } else {
-            aiAnalysisCount++;
-            console.log(`📝 Analyse & Scoring IA pour : ${job.title} chez ${job.company}`);
-        }
+        const quotaReached = aiAnalysisCount >= MAX_AI_ANALYSIS;
         const offerText = `Titre: ${job.title}\nEntreprise: ${job.company}\nLieu: ${job.location || country}\nLien: ${job.link}\nSources: ${(job.providers_list || []).join(', ')}\nDescription: ${job.description || 'Description non fournie.'}`;
 
         try {
@@ -429,25 +435,43 @@ export async function runFullJobHunterSearch({ country, jobTitle, keywords = '',
             let selectedCvId = referenceCvId;
             let pdfPath = null;
 
-            if (!hasReferenceCv || skipAiAnalysis) {
-                // Analyse simplifiée SANS CV
-                const reason = !hasReferenceCv
-                    ? (cvLoadStatus === 'not_found' ? 'Aucun CV trouvé pour cet utilisateur.'
-                        : cvLoadStatus === 'empty' ? 'CV trouvé mais vide.'
-                        : cvLoadStatus === 'loaded' ? 'Limite IA atteinte.'
-                        : `Erreur lecture CV: ${cvLoadError}`)
-                    : 'Limite d\'analyses IA atteinte.';
-                console.log(`[ANALYSE] Analyse SANS CV pour "${job.title}" — Raison: ${reason}`);
+            if (!hasReferenceCv) {
+                // CAS 1 : Aucun CV disponible → analyse simplifiée
+                const reason = cvLoadStatus === 'not_found'
+                    ? 'Aucun CV trouvé pour cet utilisateur.'
+                    : cvLoadStatus === 'empty'
+                    ? 'CV trouvé mais vide.'
+                    : `Erreur lecture CV : ${cvLoadError}`;
+                console.log(`[ANALYSE][user_id=${userId}] Analyse SANS CV pour "${job.title}" — Raison: ${reason}`);
                 aiResult = {
                     score: 50,
                     letter: 'Analyse non réalisée.',
                     analysis: `Analyse simplifiée sans CV de référence. ${reason}`
                 };
+            } else if (quotaReached) {
+                // CAS 2 : CV présent mais quota IA atteint → score par défaut AVEC mention du CV
+                console.log(`[ANALYSE][user_id=${userId}] Quota IA atteint (${MAX_AI_ANALYSIS}/${MAX_AI_ANALYSIS}), score par défaut AVEC CV pour "${job.title}"`);
+                aiResult = {
+                    score: 50,
+                    letter: 'Analyse différée — quota d\'analyses IA atteint pour cette exécution. Le CV a bien été pris en compte.',
+                    analysis: `Quota d'analyses IA atteint (${MAX_AI_ANALYSIS} analysées). Le CV de référence a été utilisé pour les offres précédentes. Prochaine analyse complète à la prochaine exécution.`
+                };
             } else {
-                // Analyse AVEC CV
-                console.log(`[ANALYSE] Analyse AVEC CV pour "${job.title}" — CV path: ${referenceCvPath}`);
-                aiResult = await analyzeJob(offerText, referenceCvPath, lang);
-                console.log(`[ANALYSE] Score IA: ${aiResult.score}/100 pour "${job.title}"`);
+                // CAS 3 : Analyse normale AVEC CV et IA
+                aiAnalysisCount++;
+                console.log(`[ANALYSE][user_id=${userId}] Analyse AVEC CV pour "${job.title}" — CV path: ${referenceCvPath}, provider IA: Gemini→Qwen→OpenAI`);
+                try {
+                    aiResult = await analyzeJob(offerText, referenceCvPath, lang);
+                    console.log(`[ANALYSE][user_id=${userId}] Score IA: ${aiResult.score}/100 pour "${job.title}" — réponse IA obtenue`);
+                } catch (aiErr) {
+                    // IA totalement indisponible (tous les providers échouent)
+                    console.log(`[ANALYSE][user_id=${userId}] IA indisponible pour "${job.title}" — ${aiErr.message}`);
+                    aiResult = {
+                        score: 50,
+                        letter: 'Analyse non réalisée.',
+                        analysis: `Service IA temporairement indisponible. Le CV de référence est disponible (${referenceCvPath}). Réessayez plus tard.`
+                    };
+                }
 
                 const pdfFilename = buildPdfFileName('cover', job.company, lang);
                 pdfPath = path.resolve(__dirname, `../cover_letters/generated/${pdfFilename}`);
@@ -491,10 +515,6 @@ export async function runFullJobHunterSearch({ country, jobTitle, keywords = '',
 
             const insertedJob = await db('jobs').where({ id: insertedId.id || insertedId }).first();
             processedJobs.push(insertedJob);
-
-            if (insertedJob.score > 70) {
-                await sendJobNotification(insertedJob);
-            }
 
             console.log(`💾 Offre enregistrée (ID: ${insertedJob.id}, User: ${userId}) | Score: ${insertedJob.score}/100`);
         } catch (err) {

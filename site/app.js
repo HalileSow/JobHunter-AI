@@ -239,6 +239,7 @@ document.querySelectorAll('.nav-item').forEach(btn => {
         if (btn.dataset.tab === 'configs') loadConfigs();
         if (btn.dataset.tab === 'providers') loadProviders();
         if (btn.dataset.tab === 'scheduler') loadSchedules();
+        if (btn.dataset.tab === 'notifications') loadWebhooks();
         if (btn.dataset.tab === 'cvs') loadCvs();
         if (btn.dataset.tab === 'settings') loadProfile();
     });
@@ -1035,3 +1036,138 @@ initApp = function() {
     oldInitApp();
     checkAdminRole();
 };
+
+// === WEBHOOKS / NOTIFICATIONS ===
+
+async function loadWebhooks() {
+    try {
+        const webhooks = await api('/webhooks');
+        const list = document.getElementById('webhooks-list');
+        if (!list) return;
+
+        list.innerHTML = webhooks.length ? webhooks.map(w => {
+            const platformIcon = w.platform === 'telegram' ? '<i class="fab fa-telegram"></i>' : '<i class="fab fa-slack"></i>';
+            const platformClass = w.platform === 'telegram' ? 'telegram' : 'slack';
+            const maskedUrl = w.webhook_url.length > 50
+                ? w.webhook_url.slice(0, 30) + '…' + w.webhook_url.slice(-15)
+                : w.webhook_url;
+            const lastSent = w.last_sent_at
+                ? `<i class="fas fa-clock"></i> Dernier envoi : ${new Date(w.last_sent_at).toLocaleString('fr-FR')}`
+                : '<i class="fas fa-clock"></i> Jamais envoyé';
+            const errorBadge = w.last_error
+                ? `<span style="color:#fca5a5;" title="${escapeHtml(w.last_error)}"><i class="fas fa-exclamation-triangle"></i> Erreur</span>`
+                : '';
+
+            return `
+                <div class="webhook-card platform-${w.platform} ${w.enabled ? '' : 'disabled'}">
+                    <div class="webhook-info">
+                        <strong>${escapeHtml(w.label || (w.platform === 'telegram' ? 'Webhook Telegram' : 'Webhook Slack'))}</strong>
+                        <span class="platform-badge ${platformClass}">${platformIcon} ${w.platform}</span>
+                        <span class="webhook-url" title="${escapeHtml(w.webhook_url)}">${escapeHtml(maskedUrl)}</span>
+                        <div class="webhook-meta">
+                            <span><i class="fas fa-star"></i> Score ≥ ${w.score_threshold}</span>
+                            <span><i class="fas fa-paper-plane"></i> ${w.total_sent} envoyé(s)</span>
+                            <span>${lastSent}</span>
+                            ${errorBadge}
+                        </div>
+                    </div>
+                    <div class="webhook-actions">
+                        <button class="webhook-toggle ${w.enabled ? 'active' : ''}" onclick="toggleWebhook(${w.id}, ${w.enabled ? 0 : 1})" title="${w.enabled ? 'Désactiver' : 'Activer'}"></button>
+                        <button onclick="testSingleWebhook(${w.id})" class="btn-confirm" style="background:#0ea5e9;padding:6px 10px;font-size:0.8rem;" title="Tester">
+                            <i class="fas fa-paper-plane"></i>
+                        </button>
+                        <button onclick="deleteWebhook(${w.id})" class="btn-danger" style="padding:6px 10px;font-size:0.8rem;" title="Supprimer">
+                            <i class="fas fa-trash"></i>
+                        </button>
+                    </div>
+                </div>
+            `;
+        }).join('') : '<p class="empty-state"><i class="fas fa-bell-slash"></i> Aucun webhook configuré. Ajoutez une URL Telegram ou Slack ci-dessus.</p>';
+    } catch (e) {
+        console.error('Erreur chargement webhooks:', e);
+    }
+}
+
+document.getElementById('btn-add-webhook')?.addEventListener('click', async () => {
+    const url = document.getElementById('wh-url')?.value?.trim();
+    const label = document.getElementById('wh-label')?.value?.trim() || '';
+    const threshold = Number(document.getElementById('wh-threshold')?.value || 70);
+    const feedback = document.getElementById('wh-feedback');
+
+    if (!url) {
+        if (feedback) { feedback.textContent = '⚠️ URL du webhook requise.'; feedback.style.color = '#fca5a5'; }
+        return;
+    }
+
+    try {
+        await api('/webhooks', 'POST', { webhook_url: url, label, score_threshold: threshold });
+        showToast('Webhook ajouté avec succès !', 'success');
+        if (feedback) feedback.textContent = '';
+        document.getElementById('wh-url').value = '';
+        document.getElementById('wh-label').value = '';
+        document.getElementById('wh-threshold').value = '70';
+        loadWebhooks();
+    } catch (e) {
+        if (feedback) { feedback.textContent = '❌ ' + e.message; feedback.style.color = '#fca5a5'; }
+    }
+});
+
+document.getElementById('btn-test-webhook')?.addEventListener('click', async () => {
+    const url = document.getElementById('wh-url')?.value?.trim();
+    const feedback = document.getElementById('wh-feedback');
+
+    if (!url) {
+        if (feedback) { feedback.textContent = '⚠️ Entrez une URL puis cliquez sur Tester.'; feedback.style.color = '#fca5a5'; }
+        return;
+    }
+
+    try {
+        if (feedback) { feedback.textContent = '⏳ Envoi du message de test...'; feedback.style.color = '#94a3b8'; }
+        const result = await api('/webhooks/test', 'POST', { webhook_url: url });
+        if (result.success) {
+            if (feedback) { feedback.textContent = `✅ Message de test envoyé via ${result.platform} !`; feedback.style.color = '#86efac'; }
+            showToast('Message de test envoyé !', 'success');
+        } else {
+            if (feedback) { feedback.textContent = '❌ ' + (result.error || 'Échec de l\'envoi.'); feedback.style.color = '#fca5a5'; }
+        }
+    } catch (e) {
+        if (feedback) { feedback.textContent = '❌ ' + e.message; feedback.style.color = '#fca5a5'; }
+    }
+});
+
+async function toggleWebhook(id, enabled) {
+    try {
+        await api(`/webhooks/${id}`, 'PUT', { enabled: Boolean(enabled) });
+        loadWebhooks();
+    } catch (e) {
+        showToast(e.message, 'error');
+    }
+}
+
+async function deleteWebhook(id) {
+    if (!confirm('Supprimer ce webhook ?')) return;
+    try {
+        await api(`/webhooks/${id}`, 'DELETE');
+        showToast('Webhook supprimé.', 'info');
+        loadWebhooks();
+    } catch (e) {
+        showToast(e.message, 'error');
+    }
+}
+
+async function testSingleWebhook(id) {
+    try {
+        showToast('Envoi du message de test...', 'info');
+        const webhooks = await api('/webhooks');
+        const wh = webhooks.find(w => w.id === id);
+        if (!wh) { showToast('Webhook introuvable.', 'error'); return; }
+        const result = await api('/webhooks/test', 'POST', { webhook_url: wh.webhook_url });
+        if (result.success) {
+            showToast(`Test réussi via ${result.platform} !`, 'success');
+        } else {
+            showToast('Échec : ' + (result.error || 'Erreur inconnue'), 'error');
+        }
+    } catch (e) {
+        showToast(e.message, 'error');
+    }
+}

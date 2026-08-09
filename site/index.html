@@ -50,6 +50,7 @@
                 <button class="nav-item" data-tab="configs"><i class="fas fa-sliders-h"></i> Configurations</button>
                 <button class="nav-item" data-tab="providers"><i class="fas fa-plug"></i> Sources & Providers</button>
                 <button class="nav-item" data-tab="scheduler"><i class="fas fa-clock"></i> Planificateur</button>
+                <button class="nav-item" data-tab="notifications"><i class="fas fa-bell"></i> Notifications</button>
                 <button class="nav-item" data-tab="cvs"><i class="fas fa-file-alt"></i> Mes CV</button>
                                 <button class="nav-item" data-tab="settings"><i class="fas fa-user-cog"></i> Profil & Paramètres</button>
                 <button class="nav-item" id="nav-admin" data-tab="admin" style="display:none; color: #f43f5e;"><i class="fas fa-user-shield"></i> Administration</button>
@@ -364,6 +365,49 @@
                 </div>
                 <h3>Recherches planifiées actives</h3>
                 <div id="schedules-list" class="runs-list" style="margin-top: 1rem;"></div>
+            </section>
+
+            <!-- TAB: NOTIFICATIONS -->
+            <section id="notifications" class="tab-content">
+                <header>
+                    <h1>Notifications Webhook</h1>
+                    <p>Recevez des alertes Telegram ou Slack quand de nouvelles offres pertinentes sont détectées.</p>
+                </header>
+
+                <div class="search-form" style="margin-bottom: 2rem;">
+                    <h3 style="margin-bottom: 1rem;"><i class="fas fa-plus-circle"></i> Ajouter un webhook</h3>
+                    <div class="form-group">
+                        <label>URL du webhook</label>
+                        <input type="url" id="wh-url" placeholder="https://api.telegram.org/bot.../sendMessage ou https://hooks.slack.com/services/...">
+                        <small style="color:#94a3b8;font-size:0.8rem;margin-top:4px;display:block;">
+                            <i class="fab fa-telegram"></i> Telegram : URL Bot API sendMessage &nbsp;|&nbsp;
+                            <i class="fab fa-slack"></i> Slack : Incoming Webhook URL
+                        </small>
+                    </div>
+                    <div class="form-row" style="display:flex;gap:12px;">
+                        <div class="form-group" style="flex:1;">
+                            <label>Libellé (optionnel)</label>
+                            <input type="text" id="wh-label" placeholder="Ex: Canal Telegram équipe">
+                        </div>
+                        <div class="form-group" style="flex:1;">
+                            <label>Seuil de score minimum</label>
+                            <input type="number" id="wh-threshold" min="0" max="100" value="70" placeholder="70">
+                            <small style="color:#94a3b8;font-size:0.8rem;margin-top:4px;display:block;">Seules les offres avec un score ≥ ce seuil déclencheront une notification.</small>
+                        </div>
+                    </div>
+                    <div style="display:flex;gap:10px;flex-wrap:wrap;">
+                        <button id="btn-add-webhook" class="btn-primary">
+                            <i class="fas fa-plus"></i> Ajouter le webhook
+                        </button>
+                        <button id="btn-test-webhook" class="btn-confirm" style="background:#0ea5e9;">
+                            <i class="fas fa-paper-plane"></i> Tester l'URL
+                        </button>
+                    </div>
+                    <p id="wh-feedback" class="form-feedback" aria-live="polite"></p>
+                </div>
+
+                <h3><i class="fas fa-list"></i> Webhooks configurés</h3>
+                <div id="webhooks-list" style="margin-top: 1rem;"></div>
             </section>
 
             <!-- TAB: CVS -->

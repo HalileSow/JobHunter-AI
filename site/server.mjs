@@ -8,10 +8,11 @@ import { initDb } from '../automation/db.js';
 import { submitJob, confirmUserSubmission } from '../automation/submission_engine.js';
 import { defaultRegistry } from '../automation/providers/registry.js';
 import { backupDatabase } from '../automation/backup_db.js';
-import { startScheduler, stopScheduler } from '../automation/scheduler.js';
+import { startScheduler, stopScheduler, restartBackupScheduler } from '../automation/scheduler.js';
 import { closeBrowser } from '../automation/browser_pool.js';
 import { launchSearchRun } from '../automation/search_run_launcher.js';
 import { importDefaultCvs } from '../automation/import_default_cvs.js';
+import { testWebhook, detectPlatform } from '../automation/notifications.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const JWT_SECRET = process.env.JWT_SECRET || (() => {
@@ -286,7 +287,7 @@ function createApp() {
     // /api/events, /api/health, /api/system/status, /api/auth/* sont publics
     
     // Routes protégées (authentification requise)
-    app.use(['/api/jobs', '/api/cvs', '/api/profile', '/api/search', '/api/search-runs', '/api/providers', '/api/admin', '/api/schedules', '/api/search-configs'], auth);
+    app.use(['/api/jobs', '/api/cvs', '/api/profile', '/api/search', '/api/search-runs', '/api/providers', '/api/admin', '/api/schedules', '/api/search-configs', '/api/webhooks'], auth);
 
     // Endpoints Recherches Planifiées
     app.get('/api/schedules', async (req, res) => {
@@ -485,12 +486,217 @@ function createApp() {
         }
     });
 
+    // Endpoints Webhooks (notifications Telegram/Slack)
+    app.get('/api/webhooks', async (req, res) => {
+        try {
+            const webhooks = await withDb((db) =>
+                db('notification_webhooks').select('id', 'platform', 'webhook_url', 'label', 'enabled', 'score_threshold', 'notify_on_new_job', 'notify_on_high_score', 'last_sent_at', 'total_sent', 'last_error', 'created_at')
+                    .where({ user_id: req.user.id })
+                    .orderBy('created_at', 'desc')
+            );
+            res.json(webhooks);
+        } catch {
+            res.status(500).json({ error: 'Impossible de charger les webhooks.' });
+        }
+    });
+
+    app.post('/api/webhooks', async (req, res) => {
+        try {
+            const webhook_url = requiredText(req.body?.webhook_url, 'URL du webhook');
+            const platform = detectPlatform(webhook_url);
+            if (platform === 'generic') {
+                return res.status(400).json({ error: 'URL non reconnue comme Telegram ou Slack.' });
+            }
+            const label = optionalText(req.body?.label);
+            const score_threshold = Number(req.body?.score_threshold ?? 70);
+            if (score_threshold < 0 || score_threshold > 100) {
+                return res.status(400).json({ error: 'score_threshold doit être entre 0 et 100.' });
+            }
+
+            const [id] = await withDb((db) => db('notification_webhooks').insert({
+                user_id: req.user.id,
+                platform,
+                webhook_url,
+                label,
+                score_threshold,
+                enabled: true,
+                notify_on_new_job: req.body?.notify_on_new_job !== false,
+                notify_on_high_score: req.body?.notify_on_high_score !== false
+            }));
+            const created = await withDb((db) =>
+                db('notification_webhooks').select('id', 'platform', 'webhook_url', 'label', 'enabled', 'score_threshold', 'created_at').where({ id }).first()
+            );
+            res.status(201).json(created);
+        } catch (error) {
+            res.status(400).json({ error: error.message || 'Paramètres invalides.' });
+        }
+    });
+
+    app.put('/api/webhooks/:id', async (req, res) => {
+        try {
+            const updates = {};
+            if (req.body?.label !== undefined) updates.label = optionalText(req.body.label);
+            if (req.body?.enabled !== undefined) updates.enabled = req.body.enabled ? 1 : 0;
+            if (req.body?.score_threshold !== undefined) {
+                const t = Number(req.body.score_threshold);
+                if (t < 0 || t > 100) return res.status(400).json({ error: 'score_threshold doit être entre 0 et 100.' });
+                updates.score_threshold = t;
+            }
+            if (req.body?.notify_on_new_job !== undefined) updates.notify_on_new_job = req.body.notify_on_new_job ? 1 : 0;
+            if (req.body?.notify_on_high_score !== undefined) updates.notify_on_high_score = req.body.notify_on_high_score ? 1 : 0;
+            updates.updated_at = new Date().toISOString();
+
+            const changed = await withDb((db) =>
+                db('notification_webhooks').where({ id: req.params.id, user_id: req.user.id }).update(updates)
+            );
+            if (!changed) return res.status(404).json({ error: 'Webhook introuvable.' });
+            const updated = await withDb((db) =>
+                db('notification_webhooks').select('id', 'platform', 'webhook_url', 'label', 'enabled', 'score_threshold', 'notify_on_new_job', 'notify_on_high_score', 'last_sent_at', 'total_sent', 'last_error', 'created_at')
+                    .where({ id: req.params.id, user_id: req.user.id }).first()
+            );
+            res.json(updated);
+        } catch {
+            res.status(500).json({ error: 'Impossible de modifier le webhook.' });
+        }
+    });
+
+    app.delete('/api/webhooks/:id', async (req, res) => {
+        try {
+            const changed = await withDb((db) =>
+                db('notification_webhooks').where({ id: req.params.id, user_id: req.user.id }).del()
+            );
+            if (!changed) return res.status(404).json({ error: 'Webhook introuvable.' });
+            res.json({ success: true });
+        } catch {
+            res.status(500).json({ error: 'Impossible de supprimer le webhook.' });
+        }
+    });
+
+    app.post('/api/webhooks/test', async (req, res) => {
+        try {
+            const webhook_url = requiredText(req.body?.webhook_url, 'URL du webhook');
+            const result = await testWebhook(webhook_url);
+            res.json(result);
+        } catch (error) {
+            res.status(500).json({ success: false, error: error.message });
+        }
+    });
+
     app.post('/api/admin/backup', authorize(['SUPER_ADMIN']), async (req, res) => {
         try {
             const result = await backupDatabase();
             res.json(result);
         } catch (error) {
-            res.status(500).json({ error: error.message || 'Impossible d’exécuter la sauvegarde.' });
+            res.status(500).json({ error: error.message || 'Impossible d\'exécuter la sauvegarde.' });
+        }
+    });
+
+    // GET /api/admin/backup/status — statut du dernier backup + configuration
+    app.get('/api/admin/backup/status', authorize(['SUPER_ADMIN']), async (req, res) => {
+        try {
+            const settings = await withDb(async (db) => {
+                const row = await db('backup_settings').first();
+                if (!row) {
+                    return {
+                        enabled: false,
+                        interval_hours: 0,
+                        retention_max: 0,
+                        last_run_at: null,
+                        last_backup_path: null,
+                        last_error: null
+                    };
+                }
+                return {
+                    enabled: Boolean(row.enabled),
+                    interval_hours: row.interval_hours,
+                    retention_max: row.retention_max,
+                    last_run_at: row.last_run_at,
+                    last_backup_path: row.last_backup_path,
+                    last_error: row.last_error
+                };
+            });
+
+            // Lister les backups existants
+            const fs = await import('node:fs/promises');
+            const path = await import('node:path');
+            const backupsDir = path.join(__dirname, '..', 'database', 'backups');
+            let backups = [];
+            try {
+                const files = await fs.readdir(backupsDir);
+                const backupFiles = files.filter(f => f.startsWith('backup-jobhunter-') && f.endsWith('.db'));
+                const stats = await Promise.all(
+                    backupFiles.map(async (f) => {
+                        const s = await fs.stat(path.join(backupsDir, f));
+                        return { filename: f, size: s.size, created: s.mtime };
+                    })
+                );
+                stats.sort((a, b) => b.created - a.created);
+                backups = stats.slice(0, 10); // 10 plus récents
+            } catch {
+                // directory may not exist if no backups yet
+            }
+
+            res.json({ settings, backups });
+        } catch (error) {
+            res.status(500).json({ error: error.message || 'Impossible de charger le statut des sauvegardes.' });
+        }
+    });
+
+    // PUT /api/admin/backup/settings — configurer l'intervalle de backup
+    app.put('/api/admin/backup/settings', authorize(['SUPER_ADMIN']), async (req, res) => {
+        try {
+            const { interval_hours, retention_max, enabled } = req.body || {};
+
+            const updates = {};
+            if (interval_hours !== undefined) {
+                const h = Number(interval_hours);
+                if (h < 1 || h > 168) return res.status(400).json({ error: 'interval_hours doit être entre 1 et 168.' });
+                updates.interval_hours = h;
+            }
+            if (retention_max !== undefined) {
+                const r = Number(retention_max);
+                if (r < 1 || r > 100) return res.status(400).json({ error: 'retention_max doit être entre 1 et 100.' });
+                updates.retention_max = r;
+            }
+            if (enabled !== undefined) {
+                updates.enabled = enabled ? 1 : 0;
+            }
+
+            if (Object.keys(updates).length === 0) {
+                return res.status(400).json({ error: 'Aucun paramètre à mettre.' });
+            }
+
+            updates.updated_at = (await initDb()).fn.now();
+
+            await withDb(async (db) => {
+                // Ensure row exists
+                const existing = await db('backup_settings').first();
+                if (!existing) {
+                    await db('backup_settings').insert({
+                        interval_hours: updates.interval_hours || 12,
+                        retention_max: updates.retention_max || 14,
+                        enabled: updates.enabled !== undefined ? updates.enabled : 1
+                    });
+                } else {
+                    await db('backup_settings').update(updates);
+                }
+            });
+
+            // Redémarrer le scheduler de backup avec les nouveaux paramètres
+            const { restartBackupScheduler } = await import('../automation/scheduler.js');
+            restartBackupScheduler();
+
+            const updated = await withDb((db) => db('backup_settings').first());
+            res.json({
+                success: true,
+                settings: {
+                    enabled: Boolean(updated.enabled),
+                    interval_hours: updated.interval_hours,
+                    retention_max: updated.retention_max
+                }
+            });
+        } catch (error) {
+            res.status(500).json({ error: error.message || 'Impossible de modifier les paramètres de sauvegarde.' });
         }
     });
 

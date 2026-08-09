@@ -3,6 +3,7 @@ import { backupDatabase } from './backup_db.js';
 import { launchSearchRun } from './search_run_launcher.js';
 import { runFullJobHunterSearch } from './search_engine.js';
 import { processJobSubmission } from './submission_engine.js';
+import { notifyUserJob } from './notifications.js';
 
 function parseProviderSelection(rawValue) {
     if (Array.isArray(rawValue)) return rawValue;
@@ -152,6 +153,13 @@ async function tick() {
                 }
             }
 
+            // 2b. Notifications webhook pour les nouvelles offres (non-bloquant)
+            if (result.jobs?.length > 0) {
+                notifyUserJob({ db, userId, jobs: result.jobs }).catch((err) =>
+                    console.warn(`⚠️ [Scheduler] Notifications webhooks: ${err.message}`)
+                );
+            }
+
             // 3. Mise à jour des métriques du run
             await db('search_runs').where({ id: runId }).update({
                 status: 'completed',
@@ -196,7 +204,6 @@ async function tick() {
  * pour éviter de saturer la mémoire avec des exécutions trop rapprochées.
  */
 let schedulerInterval = null;
-let backupInterval = null;
 let tickInProgress = false;
 let lastSearchRunTime = 0;
 const MIN_SEARCH_INTERVAL_MS = 5 * 60 * 1000; // 5 minutes minimum entre les recherches
@@ -211,14 +218,76 @@ export function startScheduler() {
     // Puis vérification chaque minute (mais jamais en parallèle, avec intervalle minimum)
     schedulerInterval = setInterval(() => safeTick(), 60_000);
 
-    // Sauvegarde automatique toutes les 12h
-    backupInterval = setInterval(() => {
-        backupDatabase().then((res) => {
-            console.log(`💾 [Scheduler] Sauvegarde auto : ${res.backupFileName}`);
-        }).catch((err) => {
-            console.error(`❌ [Scheduler] Échec sauvegarde auto : ${err.message}`);
-        });
-    }, 12 * 60 * 60 * 1000);
+    // Sauvegarde automatique — intervalle lu depuis la BDD (défaut 12h)
+    startBackupScheduler();
+}
+
+let backupSchedulerHandle = null;
+
+async function startBackupScheduler() {
+    if (backupSchedulerHandle) {
+        clearInterval(backupSchedulerHandle);
+        backupSchedulerHandle = null;
+    }
+
+    try {
+        const db = await initDb();
+        const settings = await db('backup_settings').first();
+        const intervalHours = settings?.enabled ? (settings.interval_hours || 12) : 0;
+
+        if (intervalHours <= 0) {
+            console.log('💾 [Scheduler] Sauvegarde automatique désactivée (enabled=0).');
+            return;
+        }
+
+        const intervalMs = intervalHours * 60 * 60 * 1000;
+        console.log(`💾 [Scheduler] Sauvegarde automatique configurée toutes les ${intervalHours}h.`);
+
+        // Backup immédiat au démarrage
+        runBackup(settings?.retention_max || 14);
+
+        backupSchedulerHandle = setInterval(() => {
+            // Re-read settings each time in case they changed
+            runBackup();
+        }, intervalMs);
+    } catch (err) {
+        // Fallback: if backup_settings table doesn't exist yet, use default
+        console.log(`💾 [Scheduler] Sauvegarde auto (mode par défaut, 12h) — ${err.message}`);
+        runBackup(14);
+        backupSchedulerHandle = setInterval(() => runBackup(14), 12 * 60 * 60 * 1000);
+    }
+}
+
+async function runBackup(retentionMax) {
+    try {
+        const res = await backupDatabase(retentionMax ? { retentionMax } : {});
+        console.log(`💾 [Scheduler] Sauvegarde auto : ${res.backupFileName}`);
+
+        // Update settings table with last run info
+        try {
+            const db = await initDb();
+            await db('backup_settings').update({
+                last_run_at: db.fn.now(),
+                last_backup_path: res.backupPath,
+                last_error: null,
+                updated_at: db.fn.now()
+            });
+        } catch {
+            // ignore — settings table may not exist yet
+        }
+    } catch (err) {
+        console.error(`❌ [Scheduler] Échec sauvegarde auto : ${err.message}`);
+
+        try {
+            const db = await initDb();
+            await db('backup_settings').update({
+                last_error: err.message,
+                updated_at: db.fn.now()
+            });
+        } catch {
+            // ignore
+        }
+    }
 }
 
 function safeTick() {
@@ -251,11 +320,18 @@ export function stopScheduler() {
         clearInterval(schedulerInterval);
         schedulerInterval = null;
     }
-    if (backupInterval) {
-        clearInterval(backupInterval);
-        backupInterval = null;
+    if (backupSchedulerHandle) {
+        clearInterval(backupSchedulerHandle);
+        backupSchedulerHandle = null;
     }
     console.log('🛑 [Scheduler] Planificateur arrêté.');
+}
+
+/**
+ * Redémarre uniquement le scheduler de backup (appelle quand les settings changent).
+ */
+export function restartBackupScheduler() {
+    startBackupScheduler();
 }
 
 export { matchesCron, computeNextRun, tick };

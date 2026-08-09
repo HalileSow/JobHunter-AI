@@ -40,7 +40,12 @@
   - [x] Tests unitaires validés (rétention, copie, purge).
 
 ## In Progress
-- [ ] Intégrations Webhooks Telegram / Slack pour alertes nouvelles offres.
-
-## Pending
 - [ ] CI/CD automatisée (GitHub Actions) pour tests et déploiements.
+
+## Recently Completed
+- [x] **Webhooks Telegram / Slack pour alertes nouvelles offres** (`notifications.js`).
+  - [x] Détection automatique de la plateforme (Telegram / Slack) depuis l'URL.
+  - [x] Formats de payload adaptés : Markdown Telegram, Block Kit Slack, fallback générique.
+  - [x] Table `notification_webhooks` par utilisateur (seuil de score, toggle on/off).
+  - [x] API CRUD `/api/webhooks` (list, create, update, delete, test).
+  - [x] Intégration non-bloquante dans le scheduler et le search_run_launcher.

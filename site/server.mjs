@@ -317,11 +317,15 @@ function createApp() {
             const max_salary = optionalText(req.body?.max_salary);
             const providers_list = JSON.stringify(parseProviderSelection(req.body?.providers ?? req.body?.selectedProviderIds));
 
+            const { computeNextRun } = await import('../automation/scheduler.js');
+            const nextRun = computeNextRun(cron_expression);
+
             const [id] = await withDb((db) => db('scheduled_searches').insert({
                 user_id: req.user.id,
                 name, country, title, keywords, lang, cron_expression,
                 city, experience_level, contract_type, remote, job_type, salary, min_salary, max_salary, providers_list,
-                enabled: true
+                enabled: true,
+                next_run_at: nextRun ? nextRun.toISOString() : null
             }));
             const schedule = await withDb((db) => db('scheduled_searches').where({ id }).first());
             res.status(201).json(schedule);
@@ -333,11 +337,35 @@ function createApp() {
     app.put('/api/schedules/:id/toggle', async (req, res) => {
         try {
             const { enabled } = req.body;
-            const changed = await withDb((db) => db('scheduled_searches').where({ id: req.params.id, user_id: req.user.id }).update({ enabled: enabled ? 1 : 0 }));
+            const updateData = { enabled: enabled ? 1 : 0 };
+            if (enabled) {
+                const schedule = await withDb((db) => db('scheduled_searches').where({ id: req.params.id, user_id: req.user.id }).first());
+                if (!schedule) return res.status(404).json({ error: 'Recherche planifiée introuvable.' });
+                const { computeNextRun } = await import('../automation/scheduler.js');
+                const nextRun = computeNextRun(schedule.cron_expression);
+                updateData.next_run_at = nextRun ? nextRun.toISOString() : null;
+            }
+            const changed = await withDb((db) => db('scheduled_searches').where({ id: req.params.id, user_id: req.user.id }).update(updateData));
             if (!changed) return res.status(404).json({ error: 'Recherche planifiée introuvable.' });
             res.json({ success: true });
         } catch {
             res.status(500).json({ error: 'Impossible de modifier cette recherche planifiée.' });
+        }
+    });
+
+    app.post('/api/schedules/:id/run', async (req, res) => {
+        try {
+            const schedule = await withDb((db) => db('scheduled_searches').where({ id: req.params.id, user_id: req.user.id }).first());
+            if (!schedule) return res.status(404).json({ error: 'Recherche planifiée introuvable.' });
+
+            const { tick } = await import('../automation/scheduler.js');
+            // Force immediate execution by running tick in background
+            res.json({ success: true, message: 'Exécution déclenchée.' });
+
+            // Run in background — don't block the response
+            tick().catch((err) => console.error(`❌ [API] Erreur exécution manuelle schedule #${schedule.id}: ${err.message}`));
+        } catch {
+            res.status(500).json({ error: 'Impossible de déclencher l\'exécution.' });
         }
     });
 

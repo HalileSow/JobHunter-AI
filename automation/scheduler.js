@@ -62,8 +62,7 @@ function matchesField(field, value) {
 /**
  * Calcule le prochain déclenchement approximatif basé sur l'expression cron.
  */
-function computeNextRun(expression) {
-    const now = new Date();
+function computeNextRun(expression, now = new Date()) {
     // On scanne les 1440 prochaines minutes (24h)
     for (let i = 1; i <= 1440; i++) {
         const candidate = new Date(now.getTime() + i * 60000);
@@ -71,6 +70,23 @@ function computeNextRun(expression) {
         if (matchesCron(expression, candidate)) return candidate;
     }
     return null;
+}
+
+/**
+ * Détermine si un schedule doit être exécuté maintenant.
+ * Deux conditions (l'une ou l'autre suffit) :
+ *   1. matchesCron() — la minute courante correspond à l'expression cron
+ *   2. next_run_at dépassé — le prochain run prévu est dans le passé (catch-up)
+ */
+function shouldTriggerNow(schedule, now) {
+    if (matchesCron(schedule.cron_expression, now)) return { trigger: true, reason: 'cron_match' };
+
+    if (schedule.next_run_at) {
+        const nextRun = new Date(schedule.next_run_at);
+        if (nextRun <= now) return { trigger: true, reason: 'catch_up' };
+    }
+
+    return { trigger: false };
 }
 
 /**
@@ -83,11 +99,22 @@ async function tick() {
 
     const schedules = await db('scheduled_searches').where({ enabled: true });
 
+    if (schedules.length === 0) {
+        console.log(`🕐 [Scheduler] Tick — aucune recherche planifiée active.`);
+        return;
+    }
+
+    console.log(`🕐 [Scheduler] Tick — ${schedules.length} recherche(s) planifiée(s) active(s) à ${now.toISOString()}`);
+
     // Fallback: trouver le SUPER_ADMIN pour les recherches orphelines
     let fallbackUserId = null;
 
     for (const schedule of schedules) {
-        if (!matchesCron(schedule.cron_expression, now)) continue;
+        const { trigger, reason } = shouldTriggerNow(schedule, now);
+        if (!trigger) {
+            console.log(`  ⏭️ [Scheduler] "${schedule.name}" — pas encore due (next_run_at=${schedule.next_run_at || 'NULL'}, cron=${schedule.cron_expression})`);
+            continue;
+        }
 
         // Résoudre le user_id : utiliser celui du schedule, sinon le SUPER_ADMIN
         let userId = schedule.user_id;
@@ -103,13 +130,16 @@ async function tick() {
             continue;
         }
 
-        // Éviter de relancer si déjà exécuté dans la même minute
+        // Éviter de relancer si déjà exécuté dans les 55 dernières secondes
         if (schedule.last_run_at) {
             const lastRun = new Date(schedule.last_run_at);
-            if (now.getTime() - lastRun.getTime() < 55000) continue;
+            if (now.getTime() - lastRun.getTime() < 55000) {
+                console.log(`  ⏭️ [Scheduler] "${schedule.name}" — déjà exécutée il y a moins de 55s`);
+                continue;
+            }
         }
 
-        console.log(`⏰ [Scheduler] Déclenchement planifié : "${schedule.name}" (${schedule.title} en ${schedule.country})`);
+        console.log(`⏰ [Scheduler] Déclenchement (${reason}) : "${schedule.name}" (${schedule.title} en ${schedule.country}) pour user_id=${userId}`);
 
         const advancedFilters = {
             city: schedule.city || '',
@@ -206,16 +236,27 @@ async function tick() {
 let schedulerInterval = null;
 let tickInProgress = false;
 let lastSearchRunTime = 0;
-const MIN_SEARCH_INTERVAL_MS = 5 * 60 * 1000; // 5 minutes minimum entre les recherches
 
-export function startScheduler() {
+export async function startScheduler() {
     if (schedulerInterval) return;
-    console.log('🕐 [Scheduler] Planificateur de recherches automatiques démarré (vérification chaque minute, intervalle min 5min entre recherches).');
+    console.log('🕐 [Scheduler] Planificateur de recherches automatiques démarré (vérification chaque minute).');
 
-    // Exécution immédiate au démarrage
+    // Log de diagnostic au démarrage
+    try {
+        const db = await initDb();
+        const schedules = await db('scheduled_searches').where({ enabled: true });
+        console.log(`🕐 [Scheduler] ${schedules.length} recherche(s) planifiée(s) active(s) chargée(s) depuis la BDD.`);
+        for (const s of schedules) {
+            console.log(`🕐 [Scheduler]   → "${s.name}" (cron=${s.cron_expression}, next_run_at=${s.next_run_at || 'NULL'}, last_run_at=${s.last_run_at || 'never'}, user_id=${s.user_id || 'none'})`);
+        }
+    } catch (err) {
+        console.warn(`⚠️ [Scheduler] Impossible de charger les schedules au démarrage : ${err.message}`);
+    }
+
+    // Exécution immédiate au démarrage (catch-up si des runs sont en retard)
     safeTick();
 
-    // Puis vérification chaque minute (mais jamais en parallèle, avec intervalle minimum)
+    // Puis vérification chaque minute
     schedulerInterval = setInterval(() => safeTick(), 60_000);
 
     // Sauvegarde automatique — intervalle lu depuis la BDD (défaut 12h)
@@ -295,21 +336,11 @@ function safeTick() {
         console.log('⏭️ [Scheduler] Tick précédent encore en cours, report du suivant.');
         return;
     }
-    
-    // OPTIMISATION MÉMOIRE : Vérifier l'intervalle minimum entre les recherches
-    const now = Date.now();
-    if (now - lastSearchRunTime < MIN_SEARCH_INTERVAL_MS && lastSearchRunTime > 0) {
-        // Pas de recherche, mais on peut faire le tick pour d'autres tâches futures
-        tickInProgress = true;
-        Promise.resolve().finally(() => {
-            tickInProgress = false;
-        });
-        return;
-    }
-    
+
     tickInProgress = true;
-    lastSearchRunTime = now;
-    tick().catch((err) => console.error(`❌ [Scheduler] Erreur : ${err.message}`))
+    tick().then(() => {
+        lastSearchRunTime = Date.now();
+    }).catch((err) => console.error(`❌ [Scheduler] Erreur tick : ${err.message}`))
         .finally(() => {
             tickInProgress = false;
         });
@@ -334,4 +365,4 @@ export function restartBackupScheduler() {
     startBackupScheduler();
 }
 
-export { matchesCron, computeNextRun, tick };
+export { matchesCron, computeNextRun, shouldTriggerNow, tick };

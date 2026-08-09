@@ -358,12 +358,60 @@ function createApp() {
             const schedule = await withDb((db) => db('scheduled_searches').where({ id: req.params.id, user_id: req.user.id }).first());
             if (!schedule) return res.status(404).json({ error: 'Recherche planifiée introuvable.' });
 
-            const { tick } = await import('../automation/scheduler.js');
-            // Force immediate execution by running tick in background
             res.json({ success: true, message: 'Exécution déclenchée.' });
 
-            // Run in background — don't block the response
-            tick().catch((err) => console.error(`❌ [API] Erreur exécution manuelle schedule #${schedule.id}: ${err.message}`));
+            // Force immediate execution in background — bypass cron/next_run_at check
+            (async () => {
+                const { runFullJobHunterSearch } = await import('../automation/scheduler.js').then(() => import('../automation/search_engine.js'));
+                const { processJobSubmission } = await import('../automation/submission_engine.js');
+                const { notifyUserJob } = await import('../automation/notifications.js');
+                const { computeNextRun } = await import('../automation/scheduler.js');
+                const db = await initDb();
+                const now = new Date();
+
+                const userId = schedule.user_id || (await db('users').where({ role: 'SUPER_ADMIN' }).first())?.id;
+                if (!userId) { console.error(`❌ [API] Aucun user_id pour schedule #${schedule.id}`); return; }
+
+                const [inserted] = await db('search_runs').insert({
+                    country: schedule.country, title: schedule.title,
+                    keywords: schedule.keywords || '', lang: schedule.lang || 'fr',
+                    status: 'running', user_id: userId
+                }).returning('id');
+                const runId = inserted?.id || inserted;
+
+                try {
+                    const result = await runFullJobHunterSearch({
+                        country: schedule.country, jobTitle: schedule.title,
+                        keywords: schedule.keywords || '', lang: schedule.lang || 'fr',
+                        selectedProviderIds: JSON.parse(schedule.providers_list || '[]'),
+                        userId
+                    });
+
+                    for (const job of (result.jobs || [])) {
+                        if (job.score >= 85) await processJobSubmission(job.id);
+                    }
+                    if (result.jobs?.length > 0) {
+                        notifyUserJob({ db, userId, jobs: result.jobs }).catch(() => {});
+                    }
+
+                    await db('search_runs').where({ id: runId }).update({
+                        status: 'completed', finished_at: db.fn.now(),
+                        raw_jobs_count: result.rawJobsFound || 0, unique_jobs_count: result.uniqueJobsFound || 0,
+                        analyzed_jobs_count: result.jobsAnalyzed || 0, saved_jobs_count: result.jobsSaved || 0,
+                        duplicate_jobs_count: result.duplicateJobsSkipped || 0
+                    });
+
+                    const nextRun = computeNextRun(schedule.cron_expression);
+                    await db('scheduled_searches').where({ id: schedule.id }).update({
+                        last_run_at: db.fn.now(), next_run_at: nextRun ? nextRun.toISOString() : null,
+                        total_runs: db.raw('total_runs + 1'), last_status: 'success'
+                    });
+                } catch (error) {
+                    console.error(`❌ [API] Erreur exécution manuelle schedule #${schedule.id}: ${error.message}`);
+                    await db('search_runs').where({ id: runId }).update({ status: 'failed', error: error.message, finished_at: db.fn.now() });
+                    await db('scheduled_searches').where({ id: schedule.id }).update({ last_status: 'error', last_error: error.message });
+                }
+            })().catch((err) => console.error(`❌ [API] Erreur exécution manuelle: ${err.message}`));
         } catch {
             res.status(500).json({ error: 'Impossible de déclencher l\'exécution.' });
         }

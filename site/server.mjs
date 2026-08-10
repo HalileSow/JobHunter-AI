@@ -13,12 +13,21 @@ import { closeBrowser } from '../automation/browser_pool.js';
 import { launchSearchRun } from '../automation/search_run_launcher.js';
 import { importDefaultCvs } from '../automation/import_default_cvs.js';
 import { testWebhook, detectPlatform } from '../automation/notifications.js';
+import {
+    getPublicPageByPath,
+    getPublicRoutes,
+    getSitemapEntries,
+    renderPublicPage,
+    absoluteUrl
+} from './seo-pages.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const JWT_SECRET = process.env.JWT_SECRET || (() => {
     console.warn('⚠️  JWT_SECRET non configuré — utilisation d\'un secret par défaut. Définissez JWT_SECRET dans .env pour la production.');
     return 'dev-secret-key';
 })();
+const GOOGLE_VERIFICATION_FILE_ALIAS = 'google359fa3a2b7208e7c2.html';
+const GOOGLE_VERIFICATION_FILE = 'google359f3a2b7208e7c2.html';
 const BOOTSTRAP_SUPER_ADMIN_EMAIL = (process.env.SUPER_ADMIN_BOOTSTRAP_EMAIL || 'superadmin@jobhunter.local').trim().toLowerCase();
 const generatedLettersDirectory = path.join(__dirname, '..', 'cover_letters', 'generated');
 const port = Number(process.env.PORT || 4173);
@@ -98,7 +107,89 @@ function createApp() {
     const app = express();
     app.use(cors());
     app.use(express.json({ limit: '2mb' }));
-    app.use(express.static(__dirname));
+
+    function getRequestBaseUrl(req) {
+        const forwardedProto = req.headers['x-forwarded-proto']?.toString().split(',')[0].trim();
+        const proto = forwardedProto || (req.secure ? 'https' : 'http');
+        const host = (req.headers['x-forwarded-host'] || req.headers.host || `localhost:${port}`).toString().split(',')[0].trim();
+        return `${proto}://${host}`;
+    }
+
+    function sendSiteFile(fileName, contentType) {
+        return (req, res) => {
+            res.type(contentType);
+            res.sendFile(path.join(__dirname, fileName));
+        };
+    }
+
+    app.use((req, res, next) => {
+        if (req.path.startsWith('/api') || req.path === '/app' || req.path.startsWith('/app/')) {
+            res.setHeader('X-Robots-Tag', 'noindex, nofollow, noarchive');
+        }
+        next();
+    });
+
+    app.use((req, res, next) => {
+        if (req.method === 'GET' && req.path.length > 1 && req.path.endsWith('/') && !req.path.startsWith('/api') && !req.path.startsWith('/app/')) {
+            const query = req.url.slice(req.path.length);
+            return res.redirect(301, `${req.path.slice(0, -1)}${query}`);
+        }
+        next();
+    });
+
+    app.get('/robots.txt', (req, res) => {
+        const baseUrl = getRequestBaseUrl(req);
+        res.type('text/plain').send([
+            'User-agent: *',
+            'Disallow: /api/',
+            'Disallow: /app',
+            'Disallow: /app/',
+            'Disallow: /node_modules/',
+            'Disallow: /tests/',
+            `Sitemap: ${absoluteUrl(baseUrl, '/sitemap.xml')}`
+        ].join('\n'));
+    });
+
+    app.get('/sitemap.xml', (req, res) => {
+        const baseUrl = getRequestBaseUrl(req);
+        const urls = getSitemapEntries(baseUrl)
+            .map((entry) => `  <url><loc>${entry.loc}</loc><changefreq>${entry.changefreq}</changefreq><priority>${entry.priority.toFixed(1)}</priority></url>`)
+            .join('\n');
+        res.type('application/xml').send(`<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n${urls}\n</urlset>`);
+    });
+
+    app.get('/manifest.webmanifest', (req, res) => {
+        res.type('application/manifest+json').sendFile(path.join(__dirname, 'manifest.webmanifest'));
+    });
+
+    app.get('/favicon.svg', sendSiteFile('favicon.svg', 'image/svg+xml'));
+    app.get('/apple-touch-icon.svg', sendSiteFile('apple-touch-icon.svg', 'image/svg+xml'));
+    app.get('/public.css', sendSiteFile('public.css', 'text/css'));
+    app.get('/app.js', sendSiteFile('app.js', 'application/javascript'));
+    app.get('/styles.css', sendSiteFile('styles.css', 'text/css'));
+    app.get(`/${GOOGLE_VERIFICATION_FILE}`, sendSiteFile(GOOGLE_VERIFICATION_FILE, 'text/html; charset=utf-8'));
+    app.get(`/${GOOGLE_VERIFICATION_FILE_ALIAS}`, sendSiteFile(GOOGLE_VERIFICATION_FILE, 'text/html; charset=utf-8'));
+
+    app.get('/app', (req, res) => {
+        res.sendFile(path.join(__dirname, 'index.html'));
+    });
+
+    app.get('/app/', (req, res) => {
+        res.redirect(301, '/app');
+    });
+
+    app.get('/', (req, res) => {
+        const baseUrl = getRequestBaseUrl(req);
+        const page = getPublicPageByPath('/');
+        res.send(renderPublicPage(page, baseUrl));
+    });
+
+    app.get(getPublicRoutes().filter((route) => route !== '/'), (req, res, next) => {
+        const baseUrl = getRequestBaseUrl(req);
+        const page = getPublicPageByPath(req.path);
+        if (!page) return next();
+        res.send(renderPublicPage(page, baseUrl));
+    });
 
     let sseClients = [];
     const MAX_SSE_CLIENTS = 10; // OPTIMISATION MÉMOIRE : Limite max de clients SSE

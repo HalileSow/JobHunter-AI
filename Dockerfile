@@ -38,7 +38,7 @@ COPY --from=builder /app/automation/node_modules/ ./automation/node_modules/
 COPY --from=builder /app/site/node_modules/ ./site/node_modules/
 
 # Install the Chromium browser used by Playwright.
-RUN cd automation && npx playwright install --with-deps chromium
+RUN cd automation && npx playwright install chromium && npx playwright install-deps chromium
 
 EXPOSE 10000
 

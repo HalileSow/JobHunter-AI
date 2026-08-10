@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-label="JobHunter-AI">
+  <defs>
+    <linearGradient id="g" x1="16" y1="12" x2="112" y2="116" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#38bdf8"/>
+      <stop offset="1" stop-color="#1d4ed8"/>
+    </linearGradient>
+  </defs>
+  <rect width="128" height="128" rx="28" fill="#020617"/>
+  <circle cx="64" cy="64" r="44" fill="url(#g)" opacity="0.18"/>
+  <path d="M44 38h40c6.6 0 12 5.4 12 12v24c0 6.6-5.4 12-12 12H56l-16 14V50c0-6.6 5.4-12 12-12Z" fill="url(#g)"/>
+  <path d="M50 58h28M50 70h20" stroke="#e0f2fe" stroke-width="8" stroke-linecap="round"/>
+</svg>

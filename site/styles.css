@@ -82,13 +82,13 @@ body {
     font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
     background-color: var(--bg-dark);
     color: var(--text-main);
-    height: 100vh;
-    overflow: hidden;
+    min-height: 100dvh;
+    overflow: auto;
 }
 
 .app-container {
     display: flex;
-    height: 100vh;
+    min-height: 100dvh;
 }
 
 /* SIDEBAR */
@@ -163,6 +163,7 @@ nav {
     flex-grow: 1;
     padding: 2rem 3rem;
     overflow-y: auto;
+    min-width: 0;
 }
 
 .tab-content {
@@ -224,7 +225,7 @@ header p {
 /* JOBS GRID */
 .jobs-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(350px, 1fr));
+    grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
     gap: 20px;
 }
 
@@ -424,16 +425,42 @@ header p {
 
 .form-feedback { color: var(--accent); margin-top: 1rem; }
 
+@media (max-width: 900px) {
+    .stats-bar {
+        flex-wrap: wrap;
+    }
+
+    .stat-card {
+        flex: 1 1 180px;
+        min-width: 0;
+    }
+}
+
 @media (max-width: 700px) {
-    body, .app-container { min-height: 100vh; height: auto; overflow: visible; }
+    body, .app-container { min-height: 100dvh; height: auto; overflow: visible; }
     .app-container { flex-direction: column; }
     .sidebar { width: 100%; padding: 1rem; }
     .logo { margin-bottom: 1rem; }
-    nav { flex-direction: row; overflow-x: auto; flex-grow: 0; }
-    .nav-item { white-space: nowrap; }
+    nav { flex-direction: row; flex-wrap: wrap; overflow-x: visible; flex-grow: 0; }
+    .nav-item { white-space: nowrap; flex: 1 1 220px; }
     .user-profile { display: none; }
     .main-content { padding: 1.5rem 1rem; overflow: visible; }
     .stats-bar, .form-row { grid-template-columns: 1fr; flex-direction: column; }
+    .jobs-grid { grid-template-columns: 1fr; }
+}
+
+@media (max-width: 480px) {
+    .auth-card { padding: 1.25rem; }
+    .stat-card { padding: 1rem; }
+    .job-card { padding: 1rem; }
+    .job-card .actions { flex-wrap: wrap; }
+    .job-card .actions .btn-outline,
+    .job-card .actions .btn-danger,
+    .job-card .actions .btn-confirm,
+    .job-card .actions .btn-apply {
+        flex: 1 1 100%;
+        justify-content: center;
+    }
 }
 
 .btn-primary {
@@ -639,4 +666,3 @@ header p {
     .webhook-actions { margin-left: 0; }
     .webhook-url { max-width: 100%; }
 }
-

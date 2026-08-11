@@ -14,6 +14,8 @@ jobs:
       - name: Install dependencies
         run: npm install
       - name: Install Playwright Chromium
+        # Using automation as working directory for playwright installation
+        working-directory: automation
         run: npx playwright install --with-deps chromium
       - name: Run tests
         run: npm test

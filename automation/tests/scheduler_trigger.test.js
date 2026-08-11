@@ -173,6 +173,7 @@ test('tick() — exécute un schedule avec next_run_at dans le passé (catch-up)
         lang: 'fr',
         cron_expression: '0 * * * *',
         enabled: 1,
+        providers_list: JSON.stringify(['test-sched-provider']),
         user_id: userId,
         next_run_at: pastDate,
         last_run_at: null,

@@ -267,14 +267,23 @@ export async function executeMultiProviderSearch({ country, jobTitle, keywords =
     const searchParams = { country, jobTitle, keywords, city, experienceLevel, contractType, remote, jobType, salary, minSalary, maxSalary, limit };
 
     // Découper les providers en lots de CONCURRENCY_LIMIT maximum
-    const executeProviderWithTimeout = (provider) => {
-        return Promise.race([
-            provider.searchJobs(searchParams),
-            new Promise((_, reject) => setTimeout(() => reject(new Error(`Timeout provider ${provider.name}`)), timeoutMs))
-        ]).catch(err => {
+    const executeProviderWithTimeout = async (provider) => {
+        let timeoutHandle = null;
+        try {
+            const timeoutPromise = new Promise((_, reject) => {
+                timeoutHandle = setTimeout(() => reject(new Error(`Timeout provider ${provider.name}`)), timeoutMs);
+            });
+
+            return await Promise.race([
+                provider.searchJobs(searchParams),
+                timeoutPromise
+            ]);
+        } catch (err) {
             console.error(`❌ Échec ou timeout sur ${provider.name} : ${err.message}`);
             return [];
-        });
+        } finally {
+            if (timeoutHandle) clearTimeout(timeoutHandle);
+        }
     };
 
     const rawJobs = [];

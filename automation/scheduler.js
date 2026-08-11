@@ -106,9 +106,6 @@ async function tick() {
 
     console.log(`🕐 [Scheduler] Tick — ${schedules.length} recherche(s) planifiée(s) active(s) à ${now.toISOString()}`);
 
-    // Fallback: trouver le SUPER_ADMIN pour les recherches orphelines
-    let fallbackUserId = null;
-
     for (const schedule of schedules) {
         const { trigger, reason } = shouldTriggerNow(schedule, now);
         if (!trigger) {
@@ -116,17 +113,9 @@ async function tick() {
             continue;
         }
 
-        // Résoudre le user_id : utiliser celui du schedule, sinon le SUPER_ADMIN
-        let userId = schedule.user_id;
+        const userId = schedule.user_id;
         if (!userId) {
-            if (!fallbackUserId) {
-                const admin = await db('users').where({ role: 'SUPER_ADMIN' }).first();
-                fallbackUserId = admin?.id || null;
-            }
-            userId = fallbackUserId;
-        }
-        if (!userId) {
-            console.warn(`⚠️ [Scheduler] Recherche "${schedule.name}" ignorée : aucun user_id disponible.`);
+            console.warn(`⚠️ [Scheduler] Recherche "${schedule.name}" ignorée : aucun user_id associé.`);
             continue;
         }
 
@@ -185,7 +174,7 @@ async function tick() {
 
             // 2b. Notifications webhook pour les nouvelles offres (non-bloquant)
             if (result.jobs?.length > 0) {
-                notifyUserJob({ db, userId, jobs: result.jobs }).catch((err) =>
+                await notifyUserJob({ db, userId, jobs: result.jobs }).catch((err) =>
                     console.warn(`⚠️ [Scheduler] Notifications webhooks: ${err.message}`)
                 );
             }
@@ -264,6 +253,8 @@ export async function startScheduler() {
 }
 
 let backupSchedulerHandle = null;
+let activeBackupPromise = null;
+let activeTickPromise = null;
 
 async function startBackupScheduler() {
     if (backupSchedulerHandle) {
@@ -285,7 +276,7 @@ async function startBackupScheduler() {
         console.log(`💾 [Scheduler] Sauvegarde automatique configurée toutes les ${intervalHours}h.`);
 
         // Backup immédiat au démarrage
-        runBackup(settings?.retention_max || 14);
+        await runBackup(settings?.retention_max || 14);
 
         backupSchedulerHandle = setInterval(() => {
             // Re-read settings each time in case they changed
@@ -294,41 +285,45 @@ async function startBackupScheduler() {
     } catch (err) {
         // Fallback: if backup_settings table doesn't exist yet, use default
         console.log(`💾 [Scheduler] Sauvegarde auto (mode par défaut, 12h) — ${err.message}`);
-        runBackup(14);
+        await runBackup(14);
         backupSchedulerHandle = setInterval(() => runBackup(14), 12 * 60 * 60 * 1000);
     }
 }
 
 async function runBackup(retentionMax) {
-    try {
-        const res = await backupDatabase(retentionMax ? { retentionMax } : {});
-        console.log(`💾 [Scheduler] Sauvegarde auto : ${res.backupFileName}`);
-
-        // Update settings table with last run info
+    activeBackupPromise = (async () => {
         try {
-            const db = await initDb();
-            await db('backup_settings').update({
-                last_run_at: db.fn.now(),
-                last_backup_path: res.backupPath,
-                last_error: null,
-                updated_at: db.fn.now()
-            });
-        } catch {
-            // ignore — settings table may not exist yet
-        }
-    } catch (err) {
-        console.error(`❌ [Scheduler] Échec sauvegarde auto : ${err.message}`);
+            const res = await backupDatabase(retentionMax ? { retentionMax } : {});
+            console.log(`💾 [Scheduler] Sauvegarde auto : ${res.backupFileName}`);
 
-        try {
-            const db = await initDb();
-            await db('backup_settings').update({
-                last_error: err.message,
-                updated_at: db.fn.now()
-            });
-        } catch {
-            // ignore
+            // Update settings table with last run info
+            try {
+                const db = await initDb();
+                await db('backup_settings').update({
+                    last_run_at: db.fn.now(),
+                    last_backup_path: res.backupPath,
+                    last_error: null,
+                    updated_at: db.fn.now()
+                });
+            } catch {
+                // ignore — settings table may not exist yet
+            }
+        } catch (err) {
+            console.error(`❌ [Scheduler] Échec sauvegarde auto : ${err.message}`);
+
+            try {
+                const db = await initDb();
+                await db('backup_settings').update({
+                    last_error: err.message,
+                    updated_at: db.fn.now()
+                });
+            } catch {
+                // ignore
+            }
         }
-    }
+    })();
+    await activeBackupPromise;
+    activeBackupPromise = null;
 }
 
 function safeTick() {
@@ -338,15 +333,16 @@ function safeTick() {
     }
 
     tickInProgress = true;
-    tick().then(() => {
+    activeTickPromise = tick().then(() => {
         lastSearchRunTime = Date.now();
     }).catch((err) => console.error(`❌ [Scheduler] Erreur tick : ${err.message}`))
         .finally(() => {
             tickInProgress = false;
+            activeTickPromise = null;
         });
 }
 
-export function stopScheduler() {
+export async function stopScheduler() {
     if (schedulerInterval) {
         clearInterval(schedulerInterval);
         schedulerInterval = null;
@@ -355,14 +351,20 @@ export function stopScheduler() {
         clearInterval(backupSchedulerHandle);
         backupSchedulerHandle = null;
     }
+    if (activeBackupPromise) {
+        await activeBackupPromise;
+    }
+    if (activeTickPromise) {
+        await activeTickPromise;
+    }
     console.log('🛑 [Scheduler] Planificateur arrêté.');
 }
 
 /**
  * Redémarre uniquement le scheduler de backup (appelle quand les settings changent).
  */
-export function restartBackupScheduler() {
-    startBackupScheduler();
+export async function restartBackupScheduler() {
+    await startBackupScheduler();
 }
 
 export { matchesCron, computeNextRun, shouldTriggerNow, tick };

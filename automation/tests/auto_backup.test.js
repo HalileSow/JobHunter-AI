@@ -34,6 +34,8 @@ before(async () => {
 });
 
 after(async () => {
+    const { stopScheduler } = await import('../scheduler.js');
+    await stopScheduler();
     if (sharedDb) {
         await sharedDb.destroy();
     }
@@ -115,7 +117,7 @@ test('restartBackupScheduler utilise les settings de la BDD', async () => {
     await db('backup_settings').update({ interval_hours: 6, retention_max: 7 });
 
     // Restart scheduler — should read new values
-    restartBackupScheduler();
+    await restartBackupScheduler();
 
     // Verify settings are in DB
     const settings = await db('backup_settings').first();
@@ -134,7 +136,7 @@ test('Sauvegarde désactivée (enabled=0) → aucun backup planifié', async () 
     await db('backup_settings').update({ enabled: 0 });
 
     // Restart — should log "désactivée" and not schedule
-    restartBackupScheduler();
+    await restartBackupScheduler();
 
     const settings = await db('backup_settings').first();
     assert.equal(settings.enabled, 0, 'enabled = 0');

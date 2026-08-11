@@ -316,7 +316,9 @@ function createApp() {
                 const hasSuperAdmin = await db('users').where({ role: 'SUPER_ADMIN' }).first();
                 return !hasSuperAdmin && email === BOOTSTRAP_SUPER_ADMIN_EMAIL ? 'SUPER_ADMIN' : 'USER';
             });
+            console.log(`[DIAG] Tentative d'insertion utilisateur : email=${email}, role=${role}`);
             const [userId] = await withDb((db) => db('users').insert({ email, password: hashedPassword, role }));
+            console.log(`[DIAG] Insertion utilisateur réussie : userId=${userId}`);
             try {
                 await importDefaultCvs(userId);
             } catch (cvErr) {
@@ -332,12 +334,29 @@ function createApp() {
         }
     });
 
+    app.post('/api/auth/logout', (req, res) => {
+        // La déconnexion est gérée côté client en supprimant le JWT.
+        res.json({ success: true });
+    });
+
     app.post('/api/auth/login', async (req, res) => {
         try {
             const email = normalizeEmail(req.body?.email);
             const password = requiredText(req.body?.password, 'Mot de passe');
+
+            console.log(`[DIAG] Tentative de connexion pour : ${email}`);
+
             const user = await withDb((db) => db('users').where({ email }).first());
-            if (!user || !(await bcrypt.compare(password, user.password))) {
+
+            if (!user) {
+                console.log(`[DIAG] Utilisateur non trouvé en base : ${email}`);
+                return res.status(401).json({ error: 'Identifiants invalides.' });
+            }
+
+            console.log(`[DIAG] Utilisateur trouvé en base : ${user.email}, id=${user.id}, role=${user.role}`);
+
+            if (!(await bcrypt.compare(password, user.password))) {
+                console.log(`[DIAG] Mot de passe invalide pour : ${email}`);
                 return res.status(401).json({ error: 'Identifiants invalides.' });
             }
             if (user.role !== 'SUPER_ADMIN' && email === BOOTSTRAP_SUPER_ADMIN_EMAIL) {
@@ -369,8 +388,9 @@ function createApp() {
 
             const token = jwt.sign({ id: user.id, email: user.email, role: user.role }, JWT_SECRET, { expiresIn: '7d' });
             res.json({ token });
-        } catch {
-            res.status(500).json({ error: 'Erreur lors de la connexion.' });
+        } catch (error) {
+            console.error(`[DIAG] Erreur critique lors de la connexion pour ${req.body?.email}:`, error);
+            res.status(500).json({ error: 'Erreur serveur lors de la connexion.' });
         }
     });
 
@@ -1025,15 +1045,7 @@ function createApp() {
 
     app.get('/api/cvs', async (req, res) => {
         try {
-            let cvs = await withDb((db) => db('cvs').select('id', 'name', 'path', 'lang', 'is_active', 'is_primary', 'created_at').where({ user_id: req.user.id }).orderBy('is_primary', 'desc').orderBy('is_active', 'desc').orderBy('created_at', 'desc'));
-            if (cvs.length === 0) {
-                try {
-                    await importDefaultCvs(req.user.id);
-                    cvs = await withDb((db) => db('cvs').select('id', 'name', 'path', 'lang', 'is_active', 'is_primary', 'created_at').where({ user_id: req.user.id }).orderBy('is_primary', 'desc').orderBy('is_active', 'desc').orderBy('created_at', 'desc'));
-                } catch (importErr) {
-                    console.warn('⚠️ Auto-import CVs échoué:', importErr.message);
-                }
-            }
+            const cvs = await withDb((db) => db('cvs').select('id', 'name', 'path', 'lang', 'is_active', 'is_primary', 'created_at').where({ user_id: req.user.id }).orderBy('is_primary', 'desc').orderBy('is_active', 'desc').orderBy('created_at', 'desc'));
             res.json(cvs);
         } catch {
             res.status(500).json({ error: 'Impossible de charger les CV.' });

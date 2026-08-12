@@ -7,9 +7,9 @@
   "scripts": {
     "start": "node site/server.mjs",
     "postinstall": "npm --prefix automation ci && npm --prefix site ci",
-    "test": "npm --prefix automation test && npm --prefix site test",
-    "test:automation": "npm --prefix automation test",
-    "test:site": "npm --prefix site test"
+    "test": "NODE_ENV=test npm --prefix automation test && NODE_ENV=test npm --prefix site test",
+    "test:automation": "NODE_ENV=test npm --prefix automation test",
+    "test:site": "NODE_ENV=test npm --prefix site test"
   },
   "engines": {
     "node": ">=20"

@@ -103,6 +103,14 @@ async function withDb(operation) {
     return await operation(db);
 }
 
+// Knex returns a numeric insert result on SQLite but a row object on PostgreSQL
+// when RETURNING is used. Keep route code portable across both databases.
+async function insertAndGetId(db, table, values) {
+    const result = await db(table).insert(values).returning('id');
+    const row = Array.isArray(result) ? result[0] : result;
+    return row?.id ?? row;
+}
+
 async function auth(req, res, next) {
     const authHeader = req.headers['authorization'];
     const token = authHeader && authHeader.split(' ')[1];
@@ -341,7 +349,7 @@ function createApp() {
             const password = requiredText(req.body?.password, 'Mot de passe');
             if (password.length < 8) return res.status(400).json({ error: 'Le mot de passe doit contenir au moins 8 caractères.' });
             const hashedPassword = await bcrypt.hash(password, 12);
-            const [userId] = await withDb((db) => db('users').insert({
+            const userId = await withDb((db) => insertAndGetId(db, 'users', {
                 email, password: hashedPassword, role: 'USER', status: 'ACTIVE'
             }));
             res.status(201).json({ success: true, userId, role: 'USER' });
@@ -446,7 +454,7 @@ function createApp() {
             const { computeNextRun } = await import('../automation/scheduler.js');
             const nextRun = computeNextRun(cron_expression);
 
-            const [id] = await withDb((db) => db('scheduled_searches').insert({
+            const id = await withDb((db) => insertAndGetId(db, 'scheduled_searches', {
                 user_id: req.user.id,
                 name, country, title, keywords, lang, cron_expression,
                 city, experience_level, contract_type, remote, job_type, salary, min_salary, max_salary, providers_list,
@@ -601,7 +609,7 @@ function createApp() {
                 providers_list: JSON.stringify(parseProviderSelection(req.body?.providers ?? req.body?.selectedProviderIds)),
                 enabled: true
             };
-            const [id] = await withDb((db) => db('search_configs').insert({ ...config, user_id: req.user.id }));
+            const id = await withDb((db) => insertAndGetId(db, 'search_configs', { ...config, user_id: req.user.id }));
             const created = await withDb((db) => db('search_configs').where({ id }).first());
             res.status(201).json(created);
         } catch (error) {
@@ -667,7 +675,7 @@ function createApp() {
             };
 
             const run = await withDb(async (db) => {
-                const [id] = await db('search_runs').insert({
+                const id = await insertAndGetId(db, 'search_runs', {
                     user_id: req.user.id,
                     country: config.country,
                     title: config.title,
@@ -731,7 +739,7 @@ function createApp() {
                 return res.status(400).json({ error: 'score_threshold doit être entre 0 et 100.' });
             }
 
-            const [id] = await withDb((db) => db('notification_webhooks').insert({
+            const id = await withDb((db) => insertAndGetId(db, 'notification_webhooks', {
                 user_id: req.user.id,
                 platform,
                 webhook_url,
@@ -1189,7 +1197,7 @@ function createApp() {
                 ? Buffer.from(cvContent.substring(cvContent.indexOf(']\n') + 2), 'base64').length
                 : Buffer.byteLength(cvContent, 'utf8');
 
-            const [id] = await withDb((db) => db('cvs').insert({
+            const id = await withDb((db) => insertAndGetId(db, 'cvs', {
                 user_id: req.user.id,
                 name: cvName,
                 path: destPath,
@@ -1275,7 +1283,7 @@ function createApp() {
             const selectedProviderIds = parseProviderSelection(req.body?.selectedProviderIds);
 
             const run = await withDb(async (db) => {
-                const [id] = await db('search_runs').insert({ country, title, keywords, lang, status: 'queued', user_id: req.user.id });
+                const id = await insertAndGetId(db, 'search_runs', { country, title, keywords, lang, status: 'queued', user_id: req.user.id });
                 return { id };
             });
             broadcast('search_run_updated', { id: run.id, status: 'queued', title, country });

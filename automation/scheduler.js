@@ -1,4 +1,4 @@
-import { initDb } from './db.js';
+import { initDb, insertAndGetId } from './db.js';
 import { backupDatabase } from './backup_db.js';
 import { launchSearchRun } from './search_run_launcher.js';
 import { runFullJobHunterSearch } from './search_engine.js';
@@ -141,15 +141,14 @@ async function tick() {
             maxSalary: schedule.max_salary || ''
         };
 
-        const [inserted] = await db('search_runs').insert({
+        const runId = await insertAndGetId('search_runs', {
             country: schedule.country,
             title: schedule.title,
             keywords: schedule.keywords || '',
             lang: schedule.lang || 'fr',
             status: 'running',
             user_id: userId
-        }).returning('id');
-        const runId = inserted?.id || inserted;
+        });
 
         try {
             // 1. Exécution du pipeline complet de recherche et scoring

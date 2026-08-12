@@ -4,7 +4,7 @@ import { analyzeJob, selectBestCv } from './ai_engine.js';
 import { getAllCvs, getPrimaryCvPath, getActiveCvPath } from './cv_manager.js';
 import { exportLetterToPdf } from './pdf_exporter.js';
 import { buildPdfFileName } from './sanitize_filename.js';
-import { initDb } from './db.js';
+import { initDb, insertAndGetId } from './db.js';
 import path from 'path';
 import fs from 'fs/promises';
 import { fileURLToPath } from 'url';
@@ -491,7 +491,7 @@ export async function runFullJobHunterSearch({ country, jobTitle, keywords = '',
             const providerInstance = defaultRegistry.get(job.provider);
             const isAutoApplySupported = providerInstance ? (providerInstance.supportsAutoApply(job) ? 1 : 0) : 0;
 
-            const [insertedId] = await db('jobs').insert({
+            const insertedId = await insertAndGetId('jobs', {
                 user_id: userId,
                 title: job.title,
                 company: job.company,
@@ -520,7 +520,7 @@ export async function runFullJobHunterSearch({ country, jobTitle, keywords = '',
                 provider: job.provider || 'generic',
                 dedup_hash: job.dedup_hash,
                 auto_apply_supported: isAutoApplySupported
-            }).returning('id');
+            });
 
             const insertedJob = await db('jobs').where({ id: insertedId.id || insertedId }).first();
             processedJobs.push(insertedJob);

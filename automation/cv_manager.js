@@ -1,4 +1,4 @@
-import { initDb } from './db.js';
+import { initDb, insertAndGetId } from './db.js';
 import fs from 'fs/promises';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -81,7 +81,7 @@ export async function createOptimizedCvCopy(userId, jobId, targetLang = 'fr') {
     console.log(`[CV Manager] createOptimizedCvCopy → copie créée: ${destPath}`);
 
     // Insert the optimized copy into DB
-    const [id] = await db('cvs').insert({
+    const id = await insertAndGetId('cvs', {
         user_id: userId,
         name: `CV Optimisé - Offre #${jobId}`,
         path: destPath,

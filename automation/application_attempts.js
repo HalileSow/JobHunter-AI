@@ -1,4 +1,4 @@
-import { initDb } from './db.js';
+import { initDb, insertAndGetId } from './db.js';
 
 function normalizeAttemptStatus(status) {
     const value = String(status || '').toLowerCase().trim();
@@ -42,7 +42,7 @@ export async function recordApplicationAttempt({
 }) {
     const db = await initDb();
 
-    const [insertedId] = await db('application_attempts').insert({
+    const insertedId = await insertAndGetId('application_attempts', {
         job_id: jobId,
         provider: provider || 'unknown',
         mode: mode || 'auto',
@@ -66,4 +66,3 @@ export async function getApplicationAttempts(jobId, limit = 20) {
         .orderBy('created_at', 'desc')
         .limit(limit);
 }
-

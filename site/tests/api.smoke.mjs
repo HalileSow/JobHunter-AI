@@ -26,6 +26,8 @@ try {
     assert.equal(login.status, 200);
     const { token } = await login.json();
     assert(token);
+    const caseInsensitiveLogin = await fetch(`${baseUrl}/api/auth/login`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ ...userPayload, email: userPayload.email.toUpperCase() }) });
+    assert.equal(caseInsensitiveLogin.status, 200);
     const headers = { 'content-type': 'application/json', 'authorization': `Bearer ${token}` };
 
     // === Test 2: Profile ===
@@ -58,6 +60,18 @@ try {
 
     const forbiddenAdminRes = await fetch(`${baseUrl}/api/admin/users`, { headers: adminHeaders });
     assert.equal(forbiddenAdminRes.status, 403);
+    const forbiddenStatsRes = await fetch(`${baseUrl}/api/admin/stats`, { headers: adminHeaders });
+    assert.equal(forbiddenStatsRes.status, 403);
+
+    // The project CV is a shared read-only template; copying it creates a private user CV.
+    const templateRes = await fetch(`${baseUrl}/api/cv-template`, { headers: { authorization: `Bearer ${token}` } });
+    assert.equal(templateRes.status, 200);
+    const template = await templateRes.json();
+    assert.match(template.content, /CV|Exp|Formation/i);
+    const templateCopyRes = await fetch(`${baseUrl}/api/cvs/from-template`, { method: 'POST', headers, body: JSON.stringify({ name: 'Copie modèle test' }) });
+    assert.equal(templateCopyRes.status, 201);
+    const templateCopy = await templateCopyRes.json();
+    assert.equal(templateCopy.user_id, 1);
 
     // === Test 5: Admin users list ===
     console.log('✔ API inscription publique, profil persistant, login et protection admin validés');

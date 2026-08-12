@@ -28,6 +28,7 @@ const JWT_SECRET = process.env.JWT_SECRET || (process.env.NODE_ENV === 'producti
 const GOOGLE_VERIFICATION_FILE_ALIAS = 'google359fa3a2b7208e7c2.html';
 const GOOGLE_VERIFICATION_FILE = 'google359f3a2b7208e7c2.html';
 const generatedLettersDirectory = path.join(__dirname, '..', 'cover_letters', 'generated');
+const cvTemplateSourcePath = path.join(__dirname, '..', 'cv', 'cv_fr.md');
 const port = Number(process.env.PORT || 4173);
 const allowedLanguages = new Set(['fr', 'en', 'de']);
 const cronPresetMap = {
@@ -421,7 +422,7 @@ function createApp() {
     // /api/events, /api/health, /api/system/status, /api/auth/* sont publics
     
     // Routes protégées (authentification requise)
-    app.use(['/api/jobs', '/api/cvs', '/api/profile', '/api/search', '/api/search-runs', '/api/providers', '/api/admin', '/api/schedules', '/api/search-configs', '/api/webhooks'], auth);
+    app.use(['/api/jobs', '/api/cvs', '/api/cv-template', '/api/profile', '/api/search', '/api/search-runs', '/api/providers', '/api/admin', '/api/schedules', '/api/search-configs', '/api/webhooks'], auth);
 
     // Endpoints Recherches Planifiées
     app.get('/api/schedules', async (req, res) => {
@@ -1091,6 +1092,47 @@ function createApp() {
             res.json(cvs);
         } catch {
             res.status(500).json({ error: 'Impossible de charger les CV.' });
+        }
+    });
+
+    // The project CV remains a shared, read-only template. It is never returned
+    // as another user's CV; copying it creates a new row owned by the requester.
+    app.get('/api/cv-template', async (req, res) => {
+        try {
+            const fs = await import('node:fs/promises');
+            const content = await fs.readFile(cvTemplateSourcePath, 'utf8');
+            res.json({ name: 'Modèle CV français', lang: 'fr', mime_type: 'text/markdown', content });
+        } catch {
+            res.status(404).json({ error: 'Modèle CV indisponible.' });
+        }
+    });
+
+    app.post('/api/cvs/from-template', async (req, res) => {
+        try {
+            const fs = await import('node:fs/promises');
+            const content = await fs.readFile(cvTemplateSourcePath, 'utf8');
+            const cvName = optionalText(req.body?.name) || 'Mon CV basé sur le modèle';
+            const existingPrimaryCv = await withDb((db) => db('cvs').where({ user_id: req.user.id, is_primary: 1 }).first());
+            const cvDir = path.join(__dirname, '..', 'cv', 'storage');
+            await fs.mkdir(cvDir, { recursive: true });
+            const sanitized = cvName.replace(/[^a-zA-Z0-9_\-\u00C0-\u024F]/g, '_').substring(0, 80);
+            const destPath = path.join(cvDir, `${req.user.id}_${Date.now()}_${sanitized}.md`);
+            await fs.writeFile(destPath, content, 'utf8');
+            const id = await withDb((db) => insertAndGetId(db, 'cvs', {
+                user_id: req.user.id,
+                name: cvName,
+                path: destPath,
+                content,
+                mime_type: 'text/markdown',
+                size_bytes: Buffer.byteLength(content, 'utf8'),
+                is_active: existingPrimaryCv ? 0 : 1,
+                is_primary: 0,
+                lang: 'fr'
+            }));
+            const cv = await withDb((db) => db('cvs').where({ id, user_id: req.user.id }).first());
+            res.status(201).json(cv);
+        } catch {
+            res.status(500).json({ error: 'Impossible de créer un CV depuis le modèle.' });
         }
     });
 

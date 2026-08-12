@@ -37,4 +37,10 @@ async function initDb() {
     return db;
 }
 
-export { db, initDb };
+async function insertAndGetId(table, values) {
+    const result = await db(table).insert(values).returning('id');
+    const row = Array.isArray(result) ? result[0] : result;
+    return row?.id ?? row;
+}
+
+export { db, initDb, insertAndGetId };

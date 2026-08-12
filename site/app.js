@@ -634,6 +634,18 @@ async function uploadCv() {
     }
 }
 
+async function useCvTemplate() {
+    const name = window.prompt('Nom de votre copie du modèle :', 'Mon CV basé sur le modèle');
+    if (name === null) return;
+    try {
+        await api('/cvs/from-template', 'POST', { name: name.trim() || 'Mon CV basé sur le modèle' });
+        await loadCvs();
+        showToast('Le modèle a été copié dans votre espace privé.', 'success');
+    } catch (error) {
+        showToast(error.message, 'error');
+    }
+}
+
 // CVS: Delete
 async function deleteCv(id, name) {
     if (!confirm(`Supprimer le CV "${name}" ?`)) return;
@@ -735,6 +747,8 @@ document.getElementById('profile-form').addEventListener('submit', async (event)
         feedback.textContent = error.message;
     }
 });
+
+document.getElementById('btn-use-cv-template')?.addEventListener('click', useCvTemplate);
 
 // === SEARCH CONFIGS ===
 

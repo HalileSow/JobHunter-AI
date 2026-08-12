@@ -262,6 +262,12 @@ async function startBackupScheduler() {
         backupSchedulerHandle = null;
     }
 
+    // Render PostgreSQL is managed and must not be backed up as a local SQLite file.
+    if (process.env.NODE_ENV === 'production' && process.env.DATABASE_URL) {
+        console.log('💾 [Scheduler] Sauvegarde locale désactivée : PostgreSQL Render est géré séparément.');
+        return;
+    }
+
     try {
         const db = await initDb();
         const settings = await db('backup_settings').first();

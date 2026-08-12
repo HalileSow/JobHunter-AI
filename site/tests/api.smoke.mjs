@@ -44,32 +44,23 @@ try {
     assert.equal(systemStatus.status, 'healthy');
     assert(typeof systemStatus.activeProviders === 'number');
 
-    // === Test 4: Bootstrap SUPER_ADMIN creation ===
-    const adminPayload = { email: 'superadmin@jobhunter.local', password: 'password123' };
+    // Registration must never grant SUPER_ADMIN.
+    const adminPayload = { email: 'not-admin@example.com', password: 'password123' };
     const adminReg = await fetch(`${baseUrl}/api/auth/register`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(adminPayload) });
     assert.equal(adminReg.status, 201);
     const adminRegData = await adminReg.json();
-    assert.equal(adminRegData.role, 'SUPER_ADMIN');
+    assert.equal(adminRegData.role, 'USER');
 
     const adminLogin = await fetch(`${baseUrl}/api/auth/login`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(adminPayload) });
     assert.equal(adminLogin.status, 200);
     const { token: adminToken } = await adminLogin.json();
     const adminHeaders = { 'content-type': 'application/json', 'authorization': `Bearer ${adminToken}` };
 
-    const backupRes = await fetch(`${baseUrl}/api/admin/backup`, { method: 'POST', headers: adminHeaders });
-    assert.equal(backupRes.status, 200);
-    const backupData = await backupRes.json();
-    assert.equal(backupData.success, true);
-    assert(backupData.backupFileName);
+    const forbiddenAdminRes = await fetch(`${baseUrl}/api/admin/users`, { headers: adminHeaders });
+    assert.equal(forbiddenAdminRes.status, 403);
 
     // === Test 5: Admin users list ===
-    const usersRes = await fetch(`${baseUrl}/api/admin/users`, { headers: adminHeaders });
-    assert.equal(usersRes.status, 200);
-    const users = await usersRes.json();
-    assert(Array.isArray(users));
-    assert(users.length >= 1);
-
-    console.log('✔ API profil, system/status, backup et admin/users : tous les tests validés');
+    console.log('✔ API inscription publique, profil persistant, login et protection admin validés');
 } finally {
     const { db } = await import('../../automation/db.js');
     await db.destroy();

@@ -44,6 +44,11 @@ function postgresConfig() {
 module.exports = {
   development: sqliteConfig(),
   test: sqliteConfig(),
-  production: postgresConfig() || sqliteConfig(),
-  postgres: postgresConfig()
+  // Never fall back to SQLite here. automation/db.js fails fast before using this config.
+  production: postgresConfig() || {
+    client: 'pg',
+    connection: { connectionString: '' },
+    migrations: { directory: path.resolve(__dirname, 'database/migrations') }
+  },
+  postgres: process.env.DATABASE_URL ? postgresConfig() : null
 };

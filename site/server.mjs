@@ -22,13 +22,11 @@ import {
 } from './seo-pages.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const JWT_SECRET = process.env.JWT_SECRET || (() => {
-    console.warn('⚠️  JWT_SECRET non configuré — utilisation d\'un secret par défaut. Définissez JWT_SECRET dans .env pour la production.');
-    return 'dev-secret-key';
-})();
+const JWT_SECRET = process.env.JWT_SECRET || (process.env.NODE_ENV === 'production'
+    ? (() => { throw new Error('JWT_SECRET est obligatoire en production.'); })()
+    : 'dev-secret-key');
 const GOOGLE_VERIFICATION_FILE_ALIAS = 'google359fa3a2b7208e7c2.html';
 const GOOGLE_VERIFICATION_FILE = 'google359f3a2b7208e7c2.html';
-const BOOTSTRAP_SUPER_ADMIN_EMAIL = (process.env.SUPER_ADMIN_BOOTSTRAP_EMAIL || 'superadmin@jobhunter.local').trim().toLowerCase();
 const generatedLettersDirectory = path.join(__dirname, '..', 'cover_letters', 'generated');
 const port = Number(process.env.PORT || 4173);
 const allowedLanguages = new Set(['fr', 'en', 'de']);
@@ -37,6 +35,27 @@ const cronPresetMap = {
     daily: '0 0 * * *',
     weekly: '0 8 * * 1-5'
 };
+
+async function restorePersistedCvFiles() {
+    const fs = await import('node:fs/promises');
+    await withDb(async (db) => {
+        const cvs = await db('cvs').select('id', 'path', 'content', 'mime_type').whereNotNull('content');
+        for (const cv of cvs) {
+            if (!cv.path || !cv.content) continue;
+            const target = path.resolve(cv.path);
+            const storageDir = path.resolve(path.join(__dirname, '..', 'cv', 'storage'));
+            if (!target.startsWith(`${storageDir}${path.sep}`)) continue;
+            try { await fs.access(target); continue; } catch {}
+            await fs.mkdir(path.dirname(target), { recursive: true });
+            if (cv.mime_type === 'application/pdf' || cv.content.startsWith('[PDF:')) {
+                const base64 = cv.content.startsWith('[PDF:') ? cv.content.slice(cv.content.indexOf(']\n') + 2) : cv.content;
+                await fs.writeFile(target, Buffer.from(base64, 'base64'));
+            } else {
+                await fs.writeFile(target, cv.content, 'utf8');
+            }
+        }
+    });
+}
 
 function requiredText(value, label) {
     if (typeof value !== 'string' || !value.trim()) {
@@ -50,7 +69,9 @@ function optionalText(value) {
 }
 
 function normalizeEmail(value) {
-    return requiredText(value, 'Email').toLowerCase();
+    const email = requiredText(value, 'Email').toLowerCase();
+    if (!/^\S+@\S+\.\S+$/.test(email)) throw new Error('Email invalide.');
+    return email;
 }
 
 function parseProviderSelection(rawValue) {
@@ -82,16 +103,23 @@ async function withDb(operation) {
     return await operation(db);
 }
 
-function auth(req, res, next) {
+async function auth(req, res, next) {
     const authHeader = req.headers['authorization'];
     const token = authHeader && authHeader.split(' ')[1];
     if (!token) return res.status(401).json({ error: 'Accès non autorisé.' });
     
-    jwt.verify(token, JWT_SECRET, (err, decoded) => {
-        if (err) return res.status(403).json({ error: 'Token invalide.' });
-        req.user = decoded;
+    try {
+        const decoded = jwt.verify(token, JWT_SECRET);
+        const user = await withDb((db) => db('users')
+            .select('id', 'email', 'role', 'status')
+            .where({ id: decoded.id })
+            .first());
+        if (!user || user.status !== 'ACTIVE') return res.status(403).json({ error: 'Session invalide.' });
+        req.user = user;
         next();
-    });
+    } catch {
+        return res.status(403).json({ error: 'Token invalide.' });
+    }
 }
 
 function authorize(allowedRoles = []) {
@@ -311,86 +339,73 @@ function createApp() {
         try {
             const email = normalizeEmail(req.body?.email);
             const password = requiredText(req.body?.password, 'Mot de passe');
-            const hashedPassword = await bcrypt.hash(password, 10);
-            const role = await withDb(async (db) => {
-                const hasSuperAdmin = await db('users').where({ role: 'SUPER_ADMIN' }).first();
-                return !hasSuperAdmin && email === BOOTSTRAP_SUPER_ADMIN_EMAIL ? 'SUPER_ADMIN' : 'USER';
-            });
-            console.log(`[DIAG] Tentative d'insertion utilisateur : email=${email}, role=${role}`);
-            const [userId] = await withDb((db) => db('users').insert({ email, password: hashedPassword, role }));
-            console.log(`[DIAG] Insertion utilisateur réussie : userId=${userId}`);
-            try {
-                await importDefaultCvs(userId);
-            } catch (cvErr) {
-                console.warn('⚠️ Import CVs par défaut échoué:', cvErr.message);
-            }
-            res.status(201).json({ success: true, role });
+            if (password.length < 8) return res.status(400).json({ error: 'Le mot de passe doit contenir au moins 8 caractères.' });
+            const hashedPassword = await bcrypt.hash(password, 12);
+            const [userId] = await withDb((db) => db('users').insert({
+                email, password: hashedPassword, role: 'USER', status: 'ACTIVE'
+            }));
+            res.status(201).json({ success: true, userId, role: 'USER' });
         } catch (error) {
-            if (error.message.includes('SQLITE_CONSTRAINT')) {
+            if (error.code === '23505' || error.message.includes('SQLITE_CONSTRAINT')) {
                 res.status(409).json({ error: 'Utilisateur déjà existant.' });
+            } else if (error.message.includes('Email est obligatoire') || error.message.includes('Email invalide')) {
+                res.status(400).json({ error: error.message });
             } else {
+                console.error('[AUTH] Erreur inscription:', error);
                 res.status(500).json({ error: 'Erreur lors de l’enregistrement.' });
             }
         }
     });
 
-    app.post('/api/auth/logout', (req, res) => {
-        // La déconnexion est gérée côté client en supprimant le JWT.
+    app.post('/api/auth/logout', auth, (req, res) => {
         res.json({ success: true });
     });
 
     app.post('/api/auth/login', async (req, res) => {
         try {
             const email = normalizeEmail(req.body?.email);
-            const password = requiredText(req.body?.password, 'Mot de passe');
+            if (!email) return res.status(400).json({ error: 'Email requis.' });
 
-            console.log(`[DIAG] Tentative de connexion pour : ${email}`);
+            const password = req.body?.password;
+            if (!password) return res.status(400).json({ error: 'Mot de passe requis.' });
 
-            const user = await withDb((db) => db('users').where({ email }).first());
+            console.log(`[AUTH] Tentative de connexion pour : ${email}`);
+
+            const user = await withDb((db) => db('users').whereRaw('LOWER(email) = ?', [email]).first());
+
+            // Generic error message to avoid account enumeration
+            const invalidCredsError = 'Identifiants invalides.';
 
             if (!user) {
-                console.log(`[DIAG] Utilisateur non trouvé en base : ${email}`);
-                return res.status(401).json({ error: 'Identifiants invalides.' });
+                console.log(`[AUTH] Utilisateur non trouvé : ${email}`);
+                return res.status(401).json({ error: invalidCredsError });
             }
-
-            console.log(`[DIAG] Utilisateur trouvé en base : ${user.email}, id=${user.id}, role=${user.role}`);
 
             if (!(await bcrypt.compare(password, user.password))) {
-                console.log(`[DIAG] Mot de passe invalide pour : ${email}`);
-                return res.status(401).json({ error: 'Identifiants invalides.' });
+                console.log(`[AUTH] Mot de passe invalide pour : ${user.id}`);
+                return res.status(401).json({ error: invalidCredsError });
             }
-            if (user.role !== 'SUPER_ADMIN' && email === BOOTSTRAP_SUPER_ADMIN_EMAIL) {
-                const bootstrapAdminMissing = await withDb(async (db) => {
-                    const existingSuperAdmin = await db('users').where({ role: 'SUPER_ADMIN' }).first();
-                    if (existingSuperAdmin) return false;
-                    await db('users').where({ id: user.id }).update({ role: 'SUPER_ADMIN' });
-                    return true;
-                });
-                if (bootstrapAdminMissing) {
-                    user.role = 'SUPER_ADMIN';
-                }
-            }
+
             if (user.status !== 'ACTIVE') {
+                console.log(`[AUTH] Compte inactif : ${user.id}`);
                 return res.status(403).json({ error: 'Compte suspendu.' });
             }
 
-            // Auto-import master CV for SUPER_ADMIN users who don't have one
-            if (user.role === 'SUPER_ADMIN') {
-                try {
-                    const hasPrimaryCv = await withDb((db) => db('cvs').where({ user_id: user.id, is_primary: 1 }).first());
-                    if (!hasPrimaryCv) {
-                        await importDefaultCvs(user.id);
-                    }
-                } catch (cvErr) {
-                    console.warn('⚠️ Auto-import master CV at login échoué:', cvErr.message);
-                }
-            }
+            // Generate JWT only after strict validation
+            const token = jwt.sign(
+                { id: user.id, email: user.email, role: user.role },
+                JWT_SECRET,
+                { expiresIn: '7d' }
+            );
 
-            const token = jwt.sign({ id: user.id, email: user.email, role: user.role }, JWT_SECRET, { expiresIn: '7d' });
+            console.log(`[AUTH] Connexion réussie : ${user.id}, role=${user.role}`);
             res.json({ token });
         } catch (error) {
-            console.error(`[DIAG] Erreur critique lors de la connexion pour ${req.body?.email}:`, error);
-            res.status(500).json({ error: 'Erreur serveur lors de la connexion.' });
+            console.error(`[AUTH] Erreur serveur lors de la connexion pour ${req.body?.email}:`, error);
+            if (error.message.includes('Email est obligatoire') || error.message.includes('Email invalide')) {
+                return res.status(400).json({ error: error.message });
+            }
+            res.status(500).json({ error: 'Erreur interne lors de la connexion.' });
         }
     });
 
@@ -913,6 +928,25 @@ function createApp() {
         }
     });
 
+    app.get('/api/admin/stats', authorize(['SUPER_ADMIN']), async (req, res) => {
+        try {
+            const stats = await withDb(async (db) => {
+                const total = async (table) => Number((await db(table).count('id as count').first())?.count || 0);
+                const activeUsers = Number((await db('users').where({ status: 'ACTIVE' }).count('id as count').first())?.count || 0);
+                const superAdmins = Number((await db('users').where({ role: 'SUPER_ADMIN' }).count('id as count').first())?.count || 0);
+                return {
+                    users: await total('users'), activeUsers, superAdmins,
+                    jobs: await total('jobs'), cvs: await total('cvs'),
+                    searchRuns: await total('search_runs'), scheduledSearches: await total('scheduled_searches'),
+                    applicationAttempts: await total('application_attempts')
+                };
+            });
+            res.json(stats);
+        } catch {
+            res.status(500).json({ error: 'Impossible de charger les statistiques administrateur.' });
+        }
+    });
+
     // Endpoints Providers
 
     app.get('/api/providers', async (req, res) => {
@@ -1045,10 +1079,30 @@ function createApp() {
 
     app.get('/api/cvs', async (req, res) => {
         try {
-            const cvs = await withDb((db) => db('cvs').select('id', 'name', 'path', 'lang', 'is_active', 'is_primary', 'created_at').where({ user_id: req.user.id }).orderBy('is_primary', 'desc').orderBy('is_active', 'desc').orderBy('created_at', 'desc'));
+            const cvs = await withDb((db) => db('cvs').select('id', 'name', 'path', 'lang', 'mime_type', 'size_bytes', 'is_active', 'is_primary', 'created_at').where({ user_id: req.user.id }).orderBy('is_primary', 'desc').orderBy('is_active', 'desc').orderBy('created_at', 'desc'));
             res.json(cvs);
         } catch {
             res.status(500).json({ error: 'Impossible de charger les CV.' });
+        }
+    });
+
+    app.get('/api/cvs/:id/content', async (req, res) => {
+        try {
+            const cv = await withDb((db) => db('cvs').where({ id: req.params.id, user_id: req.user.id }).first());
+            if (!cv) return res.status(404).json({ error: 'CV introuvable.' });
+            if (cv.content !== null && cv.content !== undefined) {
+                if (cv.mime_type === 'application/pdf' || cv.content.startsWith('[PDF:')) {
+                    const base64 = cv.content.startsWith('[PDF:') ? cv.content.slice(cv.content.indexOf(']\n') + 2) : cv.content;
+                    return res.type('application/pdf').send(Buffer.from(base64, 'base64'));
+                }
+                return res.type(cv.mime_type || 'text/plain').send(cv.content);
+            }
+            if (!cv.path) return res.status(404).json({ error: 'Contenu du CV introuvable.' });
+            return res.sendFile(path.resolve(cv.path), (error) => {
+                if (error && !res.headersSent) res.status(404).json({ error: 'Contenu du CV introuvable.' });
+            });
+        } catch {
+            res.status(500).json({ error: 'Impossible de récupérer le CV.' });
         }
     });
 
@@ -1130,10 +1184,18 @@ function createApp() {
                 await fs.writeFile(destPath, cvContent, 'utf-8');
             }
 
+            const mimeType = isPdf ? 'application/pdf' : 'text/markdown';
+            const sizeBytes = isPdf
+                ? Buffer.from(cvContent.substring(cvContent.indexOf(']\n') + 2), 'base64').length
+                : Buffer.byteLength(cvContent, 'utf8');
+
             const [id] = await withDb((db) => db('cvs').insert({
                 user_id: req.user.id,
                 name: cvName,
                 path: destPath,
+                content: cvContent,
+                mime_type: mimeType,
+                size_bytes: sizeBytes,
                 is_active: existingPrimaryCv ? 0 : 1, // Si pas de CV primary, celui-ci devient actif par défaut
                 is_primary: 0
             }));
@@ -1249,28 +1311,12 @@ const app = createApp();
 
 if (path.resolve(process.argv[1] || '') === fileURLToPath(import.meta.url)) {
     initDb().then(async () => {
+        await restorePersistedCvFiles();
         // Import default CVs for users who don't have any
         try {
             await importDefaultCvs();
         } catch (err) {
             console.warn('⚠️ Could not import default CVs:', err.message);
-        }
-
-        // Seed permanent super-admin account if missing
-        try {
-            const existingSuperAdmin = await withDb((db) => db('users').where({ email: BOOTSTRAP_SUPER_ADMIN_EMAIL }).first());
-            if (!existingSuperAdmin) {
-                const hashedPassword = await bcrypt.hash('SuperAdmin2024!', 10);
-                const [newUserId] = await withDb((db) => db('users').insert({
-                    email: BOOTSTRAP_SUPER_ADMIN_EMAIL,
-                    password: hashedPassword,
-                    role: 'SUPER_ADMIN',
-                    status: 'ACTIVE'
-                }));
-                console.log(`✅ Bootstrap super-admin créé (ID: ${newUserId}) — email: ${BOOTSTRAP_SUPER_ADMIN_EMAIL}`);
-            }
-        } catch (err) {
-            console.warn('⚠️ Bootstrap super-admin seed échoué:', err.message);
         }
 
         const server = app.listen(port, '0.0.0.0', () => {

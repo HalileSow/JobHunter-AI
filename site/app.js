@@ -441,7 +441,15 @@ async function downloadPdf(jobId) {
     }
 }
 
-function logout() {
+async function logout() {
+    const token = localStorage.getItem('jwt_token');
+    if (token) {
+        try {
+            await fetch('/api/auth/logout', { method: 'POST', headers: { Authorization: `Bearer ${token}` } });
+        } catch {
+            // Clear the local session even if the network is unavailable.
+        }
+    }
     localStorage.removeItem('jwt_token');
     showAuthScreen();
 }

@@ -8,6 +8,10 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const environment = process.env.NODE_ENV || 'development';
+if (environment === 'production' && !process.env.DATABASE_URL) {
+    throw new Error('DATABASE_URL est obligatoire en production. SQLite est interdit en production.');
+}
+
 const config = knexfile[environment];
 
 const db = knex(config);

@@ -8,6 +8,7 @@ services:
     env: docker
     autoDeploy: true
     healthCheckPath: /api/health
+    preDeployCommand: npx knex migrate:latest --knexfile knexfile.cjs
     dockerfilePath: ./Dockerfile
     # Plan Starter (512 Mo RAM) — suffisant avec les optimisations mémoire
     plan: starter
@@ -17,7 +18,7 @@ services:
       - key: PORT
         value: 10000
       - key: JWT_SECRET
-        value: jobhunter-ai-jwt-secret-production-2026-stable
+        generateValue: true
       - key: DATABASE_URL
         fromDatabase:
           name: jobhunter-ai-db

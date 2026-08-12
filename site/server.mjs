@@ -1231,26 +1231,30 @@ function createApp() {
     app.put('/api/profile', async (req, res) => {
         try {
             const profile = req.body || {};
-            await withDb((db) => db('profile')
-                .insert({
-                    user_id: req.user.id,
-                    first_name: optionalText(profile.first_name),
-                    last_name: optionalText(profile.last_name),
-                    dob: optionalText(profile.dob),
-                    nationality: optionalText(profile.nationality),
-                    address: optionalText(profile.address),
-                    phone: optionalText(profile.phone),
-                    email: optionalText(profile.email),
-                    photo_path: optionalText(profile.photo_path),
-                    languages: JSON.stringify(Array.isArray(profile.languages) ? profile.languages : []),
-                    skills: JSON.stringify(Array.isArray(profile.skills) ? profile.skills : []),
-                    experience: optionalText(profile.experience),
-                    education: optionalText(profile.education),
-                    availability: optionalText(profile.availability)
-                })
-                .onConflict('user_id')
-                .merge()
-            );
+            const values = {
+                user_id: req.user.id,
+                first_name: optionalText(profile.first_name),
+                last_name: optionalText(profile.last_name),
+                dob: optionalText(profile.dob),
+                nationality: optionalText(profile.nationality),
+                address: optionalText(profile.address),
+                phone: optionalText(profile.phone),
+                email: optionalText(profile.email),
+                photo_path: optionalText(profile.photo_path),
+                languages: JSON.stringify(Array.isArray(profile.languages) ? profile.languages : []),
+                skills: JSON.stringify(Array.isArray(profile.skills) ? profile.skills : []),
+                experience: optionalText(profile.experience),
+                education: optionalText(profile.education),
+                availability: optionalText(profile.availability)
+            };
+            await withDb(async (db) => {
+                const existing = await db('profile').where({ user_id: req.user.id }).select('user_id').first();
+                if (existing) {
+                    await db('profile').where({ user_id: req.user.id }).update(values);
+                } else {
+                    await db('profile').insert(values);
+                }
+            });
             res.json({ success: true });
         } catch {
             res.status(500).json({ error: 'Impossible d’enregistrer le profil.' });

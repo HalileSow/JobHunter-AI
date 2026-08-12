@@ -1232,6 +1232,10 @@ function createApp() {
         try {
             const profile = req.body || {};
             const values = {
+                // The legacy profile table uses a non-auto-increment primary key.
+                // Reusing the owning user's stable id keeps PostgreSQL inserts valid
+                // and preserves the one-profile-per-user invariant.
+                id: req.user.id,
                 user_id: req.user.id,
                 first_name: optionalText(profile.first_name),
                 last_name: optionalText(profile.last_name),

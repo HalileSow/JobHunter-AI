@@ -75,6 +75,40 @@ function normalizeEmail(value) {
     return email;
 }
 
+/**
+ * Promote only already-existing accounts explicitly listed by the deployment.
+ * This never creates users, never handles passwords, and is safe to run on
+ * every restart or redeploy.
+ */
+async function bootstrapConfiguredSuperAdmins() {
+    const configured = [...new Set(String(process.env.SUPER_ADMIN_EMAILS || '')
+        .split(',')
+        .map((email) => email.trim().toLowerCase())
+        .filter(Boolean))];
+    if (configured.length === 0) return { configured: [], promoted: [], missing: [] };
+    if (configured.length > 3) {
+        throw new Error('SUPER_ADMIN_EMAILS doit contenir au maximum trois adresses.');
+    }
+
+    const promoted = [];
+    const missing = [];
+    await withDb(async (db) => {
+        for (const email of configured) {
+            const user = await db('users').whereRaw('LOWER(email) = ?', [email]).first();
+            if (!user) {
+                missing.push(email);
+                continue;
+            }
+            if (user.role !== 'SUPER_ADMIN') {
+                await db('users').where({ id: user.id }).update({ role: 'SUPER_ADMIN' });
+            }
+            promoted.push(email);
+        }
+    });
+    console.log(`[SECURITY] SUPER_ADMIN configurés: ${promoted.length}/${configured.length}; comptes manquants: ${missing.length}`);
+    return { configured, promoted, missing };
+}
+
 function parseProviderSelection(rawValue) {
     if (Array.isArray(rawValue)) return rawValue;
     if (typeof rawValue !== 'string' || !rawValue.trim()) return [];
@@ -1369,6 +1403,7 @@ const app = createApp();
 
 if (path.resolve(process.argv[1] || '') === fileURLToPath(import.meta.url)) {
     initDb().then(async () => {
+        await bootstrapConfiguredSuperAdmins();
         await restorePersistedCvFiles();
         // Import default CVs for users who don't have any
         try {
@@ -1419,4 +1454,4 @@ if (path.resolve(process.argv[1] || '') === fileURLToPath(import.meta.url)) {
     });
 }
 
-export { createApp };
+export { createApp, bootstrapConfiguredSuperAdmins };

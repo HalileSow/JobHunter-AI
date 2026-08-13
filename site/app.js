@@ -287,16 +287,16 @@ async function loadJobs() {
         let actionBtn = '';
         if (job.status === 'En attente de confirmation') {
             actionBtn = `
-                <button onclick="confirmJob(${job.id})" class="btn-confirm" title="Confirmer en 1-clic l'envoi">
+                <button type="button" onclick="confirmJob(${job.id})" class="btn-confirm" title="Confirmer en 1-clic l'envoi">
                     <i class="fas fa-check-circle"></i> Valider & Envoyer
                 </button>
-                <button onclick="viewPack(${job.id})" class="btn-outline" title="Voir le pack prêt">
+                <button type="button" onclick="viewPack(${job.id})" class="btn-outline" title="Voir le pack prêt">
                     <i class="fas fa-box-open"></i> Dossier Prêt
                 </button>
             `;
         } else if (job.status === 'Enregistré' || job.status === 'Échec') {
             actionBtn = `
-                <button onclick="applyJob(${job.id}, this)" class="btn-apply" title="Lancer le cycle de candidature">
+                <button type="button" onclick="applyJob(${job.id}, this)" class="btn-apply" title="Lancer le cycle de candidature">
                     <i class="fas fa-paper-plane"></i> Postuler
                 </button>
             `;
@@ -329,7 +329,7 @@ async function loadJobs() {
                 ${job.error ? `<div class="job-error-msg" style="color: #fca5a5; font-size: 0.8rem; margin: 0.5rem 0; padding: 6px; background: rgba(239, 68, 68, 0.15); border-radius: 4px;"><i class="fas fa-exclamation-triangle"></i> ${escapeHtml(job.error)}</div>` : ''}
                 
                 <div class="actions" style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-top: auto;">
-                    <button onclick="downloadPdf(${job.id})" class="btn-outline" title="Télécharger la lettre PDF">
+                    <button type="button" onclick="downloadPdf(${job.id})" class="btn-outline" title="Télécharger la lettre PDF">
                         <i class="fas fa-file-pdf"></i> Lettre PDF
                     </button>
                     <a href="${escapeHtml(job.link)}" target="_blank" class="btn-outline" title="Ouvrir le lien de l'offre">

@@ -8,7 +8,8 @@ const directory = await mkdtemp(path.join(tmpdir(), 'jobhunter-multitenancy-'));
 process.env.JOBHUNTER_DB_PATH = path.join(directory, 'jobhunter.db');
 process.env.JWT_SECRET = 'multitenancy-test-secret';
 const { createApp } = await import('../server.mjs');
-const { db } = await import('../../automation/db.js');
+const { initDb } = await import('../../automation/db.js');
+const db = await initDb();
 const server = createApp().listen(0, '127.0.0.1');
 
 const request = (baseUrl, endpoint, token, options = {}) => fetch(`${baseUrl}${endpoint}`, {

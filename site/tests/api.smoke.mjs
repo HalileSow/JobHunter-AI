@@ -76,7 +76,8 @@ try {
     // === Test 5: Admin users list ===
     console.log('✔ API inscription publique, profil persistant, login et protection admin validés');
 } finally {
-    const { db } = await import('../../automation/db.js');
+    const { initDb } = await import('../../automation/db.js');
+    const db = await initDb();
     await db.destroy();
     await new Promise((resolve) => server.close(resolve));
     delete process.env.JOBHUNTER_DB_PATH;

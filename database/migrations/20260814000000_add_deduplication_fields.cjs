@@ -2,40 +2,39 @@
  * @param { import("knex").Knex } knex
  * @returns { Promise<void> }
  */
-exports.up = function(knex) {
-  return knex.schema.hasTable('jobs').then(exists => {
-    if (!exists) return;
-    return knex.schema.table('jobs', async (table) => {
-      const hasProvider = await knex.schema.hasColumn('jobs', 'provider');
-      if (!hasProvider) {
-        table.string('provider');
-      }
-      const hasExternalId = await knex.schema.hasColumn('jobs', 'external_job_id');
-      if (!hasExternalId) {
-        table.string('external_job_id');
-      }
-      const hasSubmittedAt = await knex.schema.hasColumn('jobs', 'submitted_at');
-      if (!hasSubmittedAt) {
-        table.timestamp('submitted_at');
-      }
-      // Index creation might fail if it already exists, so we might need a try-catch or check existence
-      try {
-        await knex.schema.table('jobs', (table) => {
-          table.index(['provider', 'external_job_id']);
-        });
-      } catch (e) {
-        // Index likely exists
-      }
+exports.up = async function(knex) {
+  const hasJobs = await knex.schema.hasTable('jobs');
+  if (!hasJobs) return;
+
+  const columnsToAdd = [];
+  if (!(await knex.schema.hasColumn('jobs', 'provider'))) columnsToAdd.push('provider');
+  if (!(await knex.schema.hasColumn('jobs', 'external_job_id'))) columnsToAdd.push('external_job_id');
+  if (!(await knex.schema.hasColumn('jobs', 'submitted_at'))) columnsToAdd.push('submitted_at');
+
+  for (const col of columnsToAdd) {
+    await knex.schema.table('jobs', (table) => {
+      if (col === 'provider') table.string('provider');
+      if (col === 'external_job_id') table.string('external_job_id');
+      if (col === 'submitted_at') table.timestamp('submitted_at');
     });
-  });
+  }
+
+  // Index creation
+  try {
+    await knex.schema.table('jobs', (table) => {
+      table.index(['provider', 'external_job_id']);
+    });
+  } catch (e) {
+    // Ignore error if index exists
+  }
 };
 
 /**
  * @param { import("knex").Knex } knex
  * @returns { Promise<void> }
  */
-exports.down = function(knex) {
-  return knex.schema.table('jobs', (table) => {
+exports.down = async function(knex) {
+  await knex.schema.table('jobs', (table) => {
     table.dropIndex(['provider', 'external_job_id']);
     table.dropColumn('submitted_at');
     table.dropColumn('external_job_id');

@@ -56,7 +56,8 @@ try {
 
     console.log('✔ SEO public, robots, sitemap et noindex de /app : tous les tests validés');
 } finally {
-    const { db } = await import('../../automation/db.js');
+    const { initDb } = await import('../../automation/db.js');
+    const db = await initDb();
     await db.destroy();
     await new Promise((resolve) => server.close(resolve));
     delete process.env.JOBHUNTER_DB_PATH;

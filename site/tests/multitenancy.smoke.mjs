@@ -77,6 +77,20 @@ try {
     })).status, 404);
     assert.equal((await request(baseUrl, `/api/schedules/${scheduleA.id}`, tokenB, { method: 'DELETE' })).status, 404);
 
+    const longSearchRun = await db('search_runs').insert({
+        user_id: 1,
+        country: `Pays ${'Europe '.repeat(60)}`,
+        title: `Poste ${'spécialisé '.repeat(40)}`,
+        keywords: `Compétence ${'avancée '.repeat(60)}`,
+        lang: 'fr',
+        status: 'queued'
+    }).returning('id');
+    const longSearchRunId = longSearchRun[0]?.id || longSearchRun[0];
+    const storedLongSearchRun = await db('search_runs').where({ id: longSearchRunId, user_id: 1 }).first();
+    assert(storedLongSearchRun.country.length > 255);
+    assert(storedLongSearchRun.title.length > 255);
+    assert(storedLongSearchRun.keywords.length > 255);
+
     const adminId = await db('users').insert({ email: 'admin@test.local', password: await bcrypt.hash('password123', 12), role: 'SUPER_ADMIN', status: 'ACTIVE' });
     assert(adminId);
     const adminLogin = await request(baseUrl, '/api/auth/login', null, { method: 'POST', body: JSON.stringify({ email: 'ADMIN@TEST.LOCAL', password: 'password123' }) });

@@ -268,22 +268,27 @@ function getStatusClass(status) {
 // Dashboard: Load Jobs
 async function loadJobs() {
     const jobs = await api('/jobs');
-    const list = document.getElementById('jobs-list');
+    const toProcessList = document.getElementById('jobs-list-to-process');
+    const submittedList = document.getElementById('jobs-list-submitted');
     const totalEl = document.getElementById('total-jobs');
     const avgEl = document.getElementById('avg-score');
     
-    totalEl.textContent = jobs.length;
-    const avg = jobs.length ? Math.round(jobs.reduce((a, b) => a + (b.score || 0), 0) / jobs.length) : 0;
+    // Statistiques : seulement pour les offres non soumises
+    const toProcess = jobs.filter(j => j.status !== 'Soumis');
+    const submitted = jobs.filter(j => j.status === 'Soumis');
+
+    totalEl.textContent = toProcess.length;
+    const avg = toProcess.length ? Math.round(toProcess.reduce((a, b) => a + (b.score || 0), 0) / toProcess.length) : 0;
     avgEl.textContent = `${avg}%`;
     await loadSystemStatus();
     
-    list.innerHTML = jobs.length ? jobs.map(job => {
+    const renderJob = (job) => {
         const badgeClass = getStatusClass(job.status);
         let actionBtn = '';
         if (job.status === 'En attente de confirmation') {
             actionBtn = `
                 <button onclick="confirmJob(${job.id})" class="btn-confirm" title="Confirmer en 1-clic l'envoi">
-                    <i class="fas fa-check-circle"></i> Valider & Envoyer (1-clic)
+                    <i class="fas fa-check-circle"></i> Valider & Envoyer
                 </button>
                 <button onclick="viewPack(${job.id})" class="btn-outline" title="Voir le pack prêt">
                     <i class="fas fa-box-open"></i> Dossier Prêt
@@ -314,6 +319,7 @@ async function loadJobs() {
                     <span><i class="fas fa-map-marker-alt"></i> ${escapeHtml(job.country || 'N/A')}</span>
                     ${job.contract_type ? `<span><i class="fas fa-file-contract"></i> ${escapeHtml(job.contract_type)}</span>` : ''}
                     ${job.salary && job.salary !== 'N/A' ? `<span><i class="fas fa-coins"></i> ${escapeHtml(job.salary)}</span>` : ''}
+                    ${job.submitted_at ? `<span><i class="fas fa-calendar-check"></i> ${new Date(job.submitted_at).toLocaleDateString()}</span>` : ''}
                 </div>
                 
                 <div class="analysis" style="font-size: 0.85rem; color: #d1d5db; background: rgba(0,0,0,0.2); padding: 8px; border-radius: 6px; margin-bottom: 12px;">
@@ -336,7 +342,10 @@ async function loadJobs() {
                 </div>
             </div>
         `;
-    }).join('') : '<p class="empty-state">Aucune offre analysée pour le moment.</p>';
+    };
+
+    toProcessList.innerHTML = toProcess.length ? toProcess.map(renderJob).join('') : '<p class="empty-state">Aucune offre à traiter pour le moment.</p>';
+    submittedList.innerHTML = submitted.length ? submitted.map(renderJob).join('') : '<p class="empty-state">Aucune candidature envoyée.</p>';
 }
 
 async function loadSystemStatus() {

@@ -116,12 +116,22 @@ export function computeDedupHash(job) {
  * Supprime les doublons d'une liste d'offres en fusionnant les métadonnées et sources.
  */
 export function deduplicateJobs(jobs) {
-    const seenHashes = new Map();
+    const seenHashes = new Map(); // Hash fallback
+    const seenExternalIds = new Set(); // Identifiants stables (provider + external_id)
     const seenUrls = new Set();
     const deduplicated = [];
 
     for (const job of jobs) {
         const cleanUrl = normalizeUrl(job.link);
+        
+        // 1. Déduplication prioritaire : provider + external_job_id
+        if (job.provider && job.external_job_id) {
+            const externalKey = `${job.provider}:${job.external_job_id}`;
+            if (seenExternalIds.has(externalKey)) continue;
+            seenExternalIds.add(externalKey);
+        }
+
+        // 2. Déduplication secondaire (fallback) : hash entreprise+titre+location
         const hash = computeDedupHash(job);
 
         // Si l'URL exacte a déjà été vue, passer
@@ -521,6 +531,7 @@ export async function runFullJobHunterSearch({ country, jobTitle, keywords = '',
                 selected_cv_id: selectedCvId || null,
                 pdf_path: pdfPath,
                 provider: job.provider || 'generic',
+                external_job_id: job.external_job_id || null,
                 dedup_hash: job.dedup_hash,
                 auto_apply_supported: isAutoApplySupported
             });

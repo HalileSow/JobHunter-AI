@@ -116,7 +116,8 @@ export async function processJobSubmission(jobId, options = {}) {
 
             await db('jobs').where({ id: jobId }).update({
                 status: jobStatus,
-                error: submitResult?.success ? null : (submitResult?.error || submitResult?.details || null)
+                error: submitResult?.success ? null : (submitResult?.error || submitResult?.details || null),
+                submitted_at: jobStatus === 'Soumis' ? db.fn.now() : null
             });
 
             await db('job_logs').insert({
@@ -246,7 +247,8 @@ export async function confirmUserSubmission(jobId, overrideData = null) {
 
     await db('jobs').where({ id: jobId }).update({
         status: 'Soumis',
-        error: null
+        error: null,
+        submitted_at: db.fn.now()
     });
 
     await db('job_logs').insert({

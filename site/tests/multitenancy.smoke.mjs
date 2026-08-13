@@ -77,6 +77,30 @@ try {
     })).status, 404);
     assert.equal((await request(baseUrl, `/api/schedules/${scheduleA.id}`, tokenB, { method: 'DELETE' })).status, 404);
 
+    const longKeywords = "Ouvrier d'usine, Agent de production, Opérateur de fabrication, Préparateur de commandes, Magasinier, Manutentionnaire, Agent logistique, Employé d'entrepôt, Conditionnement, Emballage, Industrie, Usine agroalimentaire, Travail saisonnier, Toute offre accessible sans diplôme élevé";
+    const longCountries = 'France, Luxembourg, Allemagne, Autriche, Belgique, Pays-Bas, Italie, Canada';
+    const configResponse = await request(baseUrl, '/api/search-configs', tokenA2, {
+        method: 'POST',
+        body: JSON.stringify({
+            name: 'Recherche ouvriers multi-pays',
+            title: 'Ouvrier d’usine',
+            keywords: longKeywords,
+            country: longCountries,
+            city: 'Toutes les villes et zones logistiques',
+            providers: ['indeed', 'linkedin']
+        })
+    });
+    assert.equal(configResponse.status, 201);
+    const savedConfig = await configResponse.json();
+    assert.equal(savedConfig.user_id, 1);
+    assert.equal(savedConfig.keywords, longKeywords);
+    assert.equal(savedConfig.country, longCountries);
+    assert.equal((await request(baseUrl, `/api/search-configs/${savedConfig.id}/run`, tokenB, { method: 'POST' })).status, 404);
+    const ownConfigs = await (await request(baseUrl, '/api/search-configs', tokenA2)).json();
+    assert.equal(ownConfigs.some((config) => config.id === savedConfig.id && config.user_id === 1), true);
+    const foreignConfigs = await (await request(baseUrl, '/api/search-configs', tokenB)).json();
+    assert.equal(foreignConfigs.some((config) => config.id === savedConfig.id), false);
+
     const longSearchRun = await db('search_runs').insert({
         user_id: 1,
         country: `Pays ${'Europe '.repeat(60)}`,

@@ -146,6 +146,18 @@ function initApp() {
     initSSE();
     loadJobs().catch(err => console.error('loadJobs error:', err.message));
     loadSystemStatus().catch(err => console.error('loadSystemStatus error:', err.message));
+    startDashboardAutoRefresh();
+}
+
+// SSE gives immediate updates; this low-frequency fallback also refreshes a
+// dashboard left open in the background when an SSE connection is interrupted.
+let dashboardRefreshTimer;
+function startDashboardAutoRefresh() {
+    if (dashboardRefreshTimer) clearInterval(dashboardRefreshTimer);
+    dashboardRefreshTimer = setInterval(() => {
+        if (document.hidden || !localStorage.getItem('jwt_token')) return;
+        loadJobs().catch(() => {});
+    }, 30_000);
 }
 
 function escapeHtml(value = '') {
@@ -188,6 +200,7 @@ function initSSE() {
             const data = JSON.parse(e.data || '{}');
             if (typeof loadSearchRuns === 'function') loadSearchRuns();
             if (typeof loadSystemStatus === 'function') loadSystemStatus();
+            if (typeof loadJobs === 'function') loadJobs().catch(() => {});
             if (data.status === 'completed') {
                 showToast('Recherche multi-providers terminée !', 'success');
                 if (typeof loadJobs === 'function') loadJobs().catch(() => {});

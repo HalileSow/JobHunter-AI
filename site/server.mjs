@@ -269,9 +269,10 @@ function createApp() {
     const MAX_SSE_CLIENTS = 10; // OPTIMISATION MÉMOIRE : Limite max de clients SSE
     const SSE_TIMEOUT_MS = 30 * 60 * 1000; // 30 minutes timeout
 
-    function broadcast(event, data = {}) {
+    function broadcast(event, data = {}, userId = null) {
         const payload = `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`;
         sseClients.forEach((client) => {
+            if (userId !== null && client.userId !== userId) return;
             try {
                 client.res.write(payload);
             } catch {
@@ -297,11 +298,13 @@ function createApp() {
         }
 
         let authenticated = false;
+        let userId = null;
 
         if (token) {
             try {
-                jwt.verify(token, JWT_SECRET);
+                const claims = jwt.verify(token, JWT_SECRET);
                 authenticated = true;
+                userId = Number(claims.id);
             } catch {
                 // Client non authentifié, on continue quand même
             }
@@ -313,7 +316,7 @@ function createApp() {
         res.flushHeaders();
 
         const clientId = Date.now() + Math.random();
-        const newClient = { id: clientId, res, authenticated, createdAt: Date.now() };
+        const newClient = { id: clientId, res, authenticated, userId, createdAt: Date.now() };
         sseClients.push(newClient);
 
         // OPTIMISATION MÉMOIRE : Timeout automatique pour éviter les connexions orphelines
@@ -723,7 +726,7 @@ function createApp() {
                 });
                 return { id };
             });
-            broadcast('search_run_updated', { id: run.id, status: 'queued', title: config.title, country: config.country });
+            broadcast('search_run_updated', { id: run.id, status: 'queued', title: config.title, country: config.country }, req.user.id);
 
             await launchSearchRun({
                 runId: run.id,
@@ -736,10 +739,10 @@ function createApp() {
                 userId: req.user.id,
                 onStatusChange: (updates) => {
                     if (updates.status) {
-                        broadcast('search_run_updated', { id: run.id, status: updates.status, error: updates.error || null });
+                        broadcast('search_run_updated', { id: run.id, status: updates.status, error: updates.error || null }, req.user.id);
                     }
                     if (updates.status === 'completed' || updates.status === 'failed') {
-                        broadcast('jobs_refreshed', {});
+                        broadcast('jobs_refreshed', {}, req.user.id);
                     }
                 }
             });
@@ -1042,7 +1045,7 @@ function createApp() {
         try {
             const changes = await withDb((db) => db('jobs').where({ id: req.params.id, user_id: req.user.id }).del());
             if (!changes) return res.status(404).json({ error: 'Offre introuvable.' });
-            broadcast('job_deleted', { id: req.params.id });
+            broadcast('job_deleted', { id: req.params.id }, req.user.id);
             res.json({ success: true });
         } catch {
             res.status(500).json({ error: 'Impossible de supprimer cette offre.' });
@@ -1073,7 +1076,7 @@ function createApp() {
                 return res.status(403).json({ error: 'Accès interdit.' });
             }
             const result = await confirmUserSubmission(req.params.id);
-            broadcast('job_updated', { id: req.params.id, status: 'Soumis' });
+            broadcast('job_updated', { id: req.params.id, status: 'Soumis' }, req.user.id);
             res.json(result);
         } catch (error) {
             res.status(500).json({ error: error.message || 'Impossible de confirmer la soumission.' });
@@ -1116,7 +1119,7 @@ function createApp() {
             }
             await submitJob(req.params.id);
             const updatedJob = await withDb((db) => db('jobs').where({ id: req.params.id, user_id: job.user_id }).first());
-            broadcast('job_updated', { id: req.params.id, status: updatedJob?.status, error: updatedJob?.error });
+            broadcast('job_updated', { id: req.params.id, status: updatedJob?.status, error: updatedJob?.error }, req.user.id);
             res.json({ success: true, status: updatedJob.status, error: updatedJob.error });
         } catch (error) {
             res.status(500).json({ error: `Erreur lors de la tentative de soumission : ${error.message}` });
@@ -1373,7 +1376,7 @@ function createApp() {
                 const id = await insertAndGetId(db, 'search_runs', { country, title, keywords, lang, status: 'queued', user_id: req.user.id });
                 return { id };
             });
-            broadcast('search_run_updated', { id: run.id, status: 'queued', title, country });
+            broadcast('search_run_updated', { id: run.id, status: 'queued', title, country }, req.user.id);
 
             await launchSearchRun({
                 runId: run.id,
@@ -1386,10 +1389,10 @@ function createApp() {
                 userId: req.user.id,
                 onStatusChange: (updates) => {
                     if (updates.status) {
-                        broadcast('search_run_updated', { id: run.id, status: updates.status, error: updates.error || null });
+                        broadcast('search_run_updated', { id: run.id, status: updates.status, error: updates.error || null }, req.user.id);
                     }
                     if (updates.status === 'completed' || updates.status === 'failed') {
-                        broadcast('jobs_refreshed', {});
+                        broadcast('jobs_refreshed', {}, req.user.id);
                     }
                 }
             });

@@ -108,8 +108,12 @@ Réponds UNIQUEMENT avec l'ID du CV choisi (un nombre).`;
  * @param {string} lang - Langue (fr, en, de)
  * @returns {Promise<Object>} - { score, letter, analysis }
  */
-export async function analyzeJob(offerText, cvPath, lang = 'fr') {
-    const cvContent = await fs.readFile(cvPath, 'utf-8');
+export async function analyzeJob(offerText, cvReference, lang = 'fr') {
+    // New callers pass persisted content. Keep accepting a path for legacy
+    // CLI callers, but never make the analysis depend on a fixed filename.
+    const cvContent = cvReference && typeof cvReference === 'object' && typeof cvReference.content === 'string'
+        ? cvReference.content
+        : await fs.readFile(cvReference?.path || cvReference, 'utf-8');
     const langName = lang === 'fr' ? 'français' : lang === 'en' ? 'anglais' : 'allemand';
 
     const prompt = `Tu es un expert en recrutement de haut niveau et un spécialiste en copywriting de carrière.

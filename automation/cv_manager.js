@@ -7,14 +7,18 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 export async function addCv(userId, name, filePath, options = {}) {
     const db = await initDb();
+    const content = await fs.readFile(filePath);
     const destPath = path.resolve(__dirname, '../cv/storage', `${userId}_${path.basename(filePath)}`);
-    await fs.copyFile(filePath, destPath);
+    await fs.writeFile(destPath, content);
 
     const existingPrimary = await db('cvs').where({ user_id: userId, is_primary: 1 }).first();
     await db('cvs').insert({
         user_id: userId,
         name,
         path: destPath,
+        content: content.toString('utf8'),
+        mime_type: options.mime_type || 'text/markdown',
+        size_bytes: content.byteLength,
         lang: options.lang || 'fr',
         is_active: existingPrimary ? 0 : 1,
         is_primary: 0
@@ -55,6 +59,27 @@ export async function getPrimaryCvPath(userId) {
 }
 
 /**
+ * Return the authenticated user's primary CV record, including its persisted
+ * content. The user_id predicate is mandatory: SUPER_ADMIN has no cross-user
+ * CV privilege in this workflow.
+ */
+export async function getPrimaryCv(userId) {
+    const db = await initDb();
+    return db('cvs').where({ user_id: userId, is_primary: 1 }).first();
+}
+
+/**
+ * Read a CV from its persisted database content. The path fallback exists only
+ * for legacy rows created before content persistence was introduced.
+ */
+export async function readCvContent(cv) {
+    if (!cv) return null;
+    if (typeof cv.content === 'string' && cv.content.trim()) return cv.content;
+    if (!cv.path) return null;
+    return fs.readFile(cv.path, 'utf8');
+}
+
+/**
  * Create an optimized copy of the primary CV for a specific application.
  * The copy is linked to the job and can be translated/adapted.
  * NEVER modifies the original primary CV.
@@ -76,8 +101,11 @@ export async function createOptimizedCvCopy(userId, jobId, targetLang = 'fr') {
     const fileName = `${userId}_${jobId}_${timestamp}_optimized_${targetLang}.md`;
     const destPath = path.join(cvDir, fileName);
 
-    // Copy the primary CV content (read-only from primary, write to new file)
-    await fs.copyFile(primaryCv.path, destPath);
+    // Copy the primary CV content (read-only from primary, write to new file).
+    // The database is the source of truth; the path is only a legacy fallback.
+    const primaryContent = await readCvContent(primaryCv);
+    if (!primaryContent) throw new Error('Le contenu du CV principal est vide.');
+    await fs.writeFile(destPath, primaryContent, 'utf8');
     console.log(`[CV Manager] createOptimizedCvCopy → copie créée: ${destPath}`);
 
     // Insert the optimized copy into DB
@@ -85,6 +113,9 @@ export async function createOptimizedCvCopy(userId, jobId, targetLang = 'fr') {
         user_id: userId,
         name: `CV Optimisé - Offre #${jobId}`,
         path: destPath,
+        content: primaryContent,
+        mime_type: primaryCv.mime_type || 'text/markdown',
+        size_bytes: Buffer.byteLength(primaryContent, 'utf8'),
         lang: targetLang,
         is_active: 0,
         is_primary: 0

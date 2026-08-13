@@ -66,7 +66,10 @@ function requiredText(value, label) {
 }
 
 function optionalText(value) {
-    return typeof value === 'string' ? value.trim() : '';
+    // Optional text is persisted as supplied. In particular, do not trim or
+    // truncate long keywords/provider-related values before PostgreSQL stores
+    // them.
+    return typeof value === 'string' ? value : '';
 }
 
 function normalizeEmail(value) {

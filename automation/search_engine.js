@@ -1,7 +1,7 @@
 import crypto from 'crypto';
 import { defaultRegistry } from './providers/registry.js';
 import { analyzeJob, selectBestCv } from './ai_engine.js';
-import { getAllCvs, getPrimaryCvPath, getActiveCvPath } from './cv_manager.js';
+import { getAllCvs, getPrimaryCv, getActiveCvPath, readCvContent } from './cv_manager.js';
 import { exportLetterToPdf } from './pdf_exporter.js';
 import { buildPdfFileName } from './sanitize_filename.js';
 import { initDb, insertAndGetId } from './db.js';
@@ -347,6 +347,7 @@ export async function runFullJobHunterSearch({ country, jobTitle, keywords = '',
     // Priorité : CV principal (SUPER_ADMIN) > CV actif (utilisateur normal)
     const MAX_AI_ANALYSIS = 15;
     let referenceCvPath = null;
+    let referenceCvContent = null;
     let referenceCvId = null;
     let cvLoadStatus = 'not_found'; // not_found | found | empty | loaded
     let cvLoadError = null;
@@ -362,11 +363,13 @@ export async function runFullJobHunterSearch({ country, jobTitle, keywords = '',
 
     try {
         // Étape 1 : chercher le CV principal
-        const primaryPath = await getPrimaryCvPath(userId);
-        if (primaryPath) {
-            console.log(`[DIAG][CV] user_id=${userId}, rôle=${userRole}, CV principal trouvé — path: ${primaryPath}`);
+        const primaryCv = await getPrimaryCv(userId);
+        if (primaryCv) {
+            console.log(`[DIAG][CV] user_id=${userId}, rôle=${userRole}, CV principal trouvé — id: ${primaryCv.id}, source: ${primaryCv.content ? 'PostgreSQL' : primaryCv.path}`);
             cvLoadStatus = 'found';
-            referenceCvPath = primaryPath;
+            referenceCvPath = primaryCv.path || null;
+            referenceCvId = primaryCv.id;
+            referenceCvContent = await readCvContent(primaryCv);
         } else {
             console.log(`[DIAG][CV] user_id=${userId}, rôle=${userRole}, aucun CV principal, fallback sur CV actif`);
             // Étape 2 : fallback sur le CV actif
@@ -386,7 +389,7 @@ export async function runFullJobHunterSearch({ country, jobTitle, keywords = '',
         // Étape 3 : vérifier que le fichier est lisible et non vide
         if (referenceCvPath) {
             try {
-                const cvContent = await fs.readFile(referenceCvPath, 'utf-8');
+                const cvContent = referenceCvContent || await fs.readFile(referenceCvPath, 'utf-8');
                 if (!cvContent || cvContent.trim().length === 0) {
                     console.log(`[DIAG][CV] user_id=${userId}, CV trouvé mais VIDE — path: ${referenceCvPath}`);
                     cvLoadStatus = 'empty';
@@ -470,7 +473,7 @@ export async function runFullJobHunterSearch({ country, jobTitle, keywords = '',
                 aiAnalysisCount++;
                 console.log(`[ANALYSE][user_id=${userId}] Analyse AVEC CV pour "${job.title}" — CV path: ${referenceCvPath}, provider IA: Gemini→Qwen→OpenAI`);
                 try {
-                    aiResult = await analyzeJob(offerText, referenceCvPath, lang);
+                    aiResult = await analyzeJob(offerText, { content: referenceCvContent, path: referenceCvPath }, lang);
                     console.log(`[ANALYSE][user_id=${userId}] Score IA: ${aiResult.score}/100 pour "${job.title}" — réponse IA obtenue`);
                 } catch (aiErr) {
                     // IA totalement indisponible (tous les providers échouent)

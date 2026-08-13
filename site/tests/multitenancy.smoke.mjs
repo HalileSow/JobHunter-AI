@@ -43,13 +43,47 @@ try {
     const cvsA2 = await (await request(baseUrl, '/api/cvs', tokenA2)).json();
     assert.equal(cvsA2.some((cv) => cv.id === cvA.id), true);
 
+    const longValue = 'mot-cle '.repeat(80);
+    const scheduleAResponse = await request(baseUrl, '/api/schedules', tokenA2, {
+        method: 'POST',
+        body: JSON.stringify({
+            name: `Recherche longue ${'x'.repeat(300)}`,
+            country: 'France',
+            title: `Développeur ${'backend '.repeat(40)}`,
+            keywords: longValue,
+            city: `Paris ${'centre '.repeat(50)}`,
+            providers: ['indeed', 'linkedin']
+        })
+    });
+    assert.equal(scheduleAResponse.status, 201);
+    const scheduleA = await scheduleAResponse.json();
+    assert.equal(scheduleA.user_id, 1);
+    assert.equal(scheduleA.keywords, longValue);
+    assert(scheduleA.name.length > 255);
+
+    const scheduleBResponse = await request(baseUrl, '/api/schedules', tokenB, {
+        method: 'POST',
+        body: JSON.stringify({ name: 'Recherche B', country: 'France', title: 'QA' })
+    });
+    assert.equal(scheduleBResponse.status, 201);
+    const scheduleB = await scheduleBResponse.json();
+    const schedulesA = await (await request(baseUrl, '/api/schedules', tokenA2)).json();
+    const schedulesB = await (await request(baseUrl, '/api/schedules', tokenB)).json();
+    assert.equal(schedulesA.some((schedule) => schedule.id === scheduleA.id), true);
+    assert.equal(schedulesA.some((schedule) => schedule.id === scheduleB.id), false);
+    assert.equal(schedulesB.some((schedule) => schedule.id === scheduleA.id), false);
+    assert.equal((await request(baseUrl, `/api/schedules/${scheduleA.id}/toggle`, tokenB, {
+        method: 'PUT', body: JSON.stringify({ enabled: false })
+    })).status, 404);
+    assert.equal((await request(baseUrl, `/api/schedules/${scheduleA.id}`, tokenB, { method: 'DELETE' })).status, 404);
+
     const adminId = await db('users').insert({ email: 'admin@test.local', password: await bcrypt.hash('password123', 12), role: 'SUPER_ADMIN', status: 'ACTIVE' });
     assert(adminId);
     const adminLogin = await request(baseUrl, '/api/auth/login', null, { method: 'POST', body: JSON.stringify({ email: 'ADMIN@TEST.LOCAL', password: 'password123' }) });
     const adminToken = (await adminLogin.json()).token;
     assert.equal((await request(baseUrl, '/api/admin/users', adminToken)).status, 200);
     assert.equal((await request(baseUrl, '/api/admin/users', tokenA2)).status, 403);
-    console.log('✔ isolation A/B, persistance CV après logout/login et RBAC validés');
+    console.log('✔ isolation A/B, persistance CV, RBAC et recherches planifiées longues validés');
 } finally {
     await db.destroy();
     await new Promise((resolve) => server.close(resolve));

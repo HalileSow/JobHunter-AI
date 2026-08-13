@@ -170,6 +170,28 @@ test('SUPER_ADMIN avec CV principal → analyse complète AVEC CV (pas de messag
     assert.ok(!decision.analysis?.includes('sans CV de référence'), 'Le message ne doit PAS contenir "sans CV de référence"');
 });
 
+test('CV principal persistant en PostgreSQL → lecture sans dépendre du fichier du conteneur', async () => {
+    const { getPrimaryCv, readCvContent } = await import('../cv_manager.js');
+    const adminId = await createUser(sharedDb, { email: 'superadmin-persisted@analysis.test', role: 'SUPER_ADMIN' });
+    const persistedContent = '# CV principal persistant\n\nCompétence distinctive: PostgreSQL et architecture multi-tenant.';
+
+    await sharedDb('cvs').insert({
+        user_id: adminId,
+        name: 'CV Principal',
+        path: '/app/cv/storage/1_cv_fr.md',
+        content: persistedContent,
+        mime_type: 'text/markdown',
+        size_bytes: Buffer.byteLength(persistedContent),
+        is_active: 1,
+        is_primary: 1,
+        lang: 'fr'
+    });
+
+    const primary = await getPrimaryCv(adminId);
+    assert.equal(primary.user_id, adminId);
+    assert.equal(await readCvContent(primary), persistedContent);
+});
+
 // ═══════════════════════════════════════════════════════════
 // Test 2: Utilisateur normal + CV → analyse AVEC CV
 // ═══════════════════════════════════════════════════════════

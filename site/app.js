@@ -336,7 +336,7 @@ async function loadJobs() {
                         <i class="fas fa-external-link-alt"></i> Offre
                     </a>
                     ${actionBtn}
-                    <button onclick="deleteJob(${job.id})" class="btn-danger" title="Supprimer" style="margin-left: auto;">
+                    <button type="button" onclick="deleteJob(${job.id})" class="btn-danger" title="Supprimer" style="margin-left: auto;">
                         <i class="fas fa-trash"></i>
                     </button>
                 </div>

@@ -363,8 +363,11 @@ function createApp() {
                 totalJobs: Number(jobsCount?.count || 0),
                 totalSearchRuns: Number(runsCount?.count || 0),
                 latestSearchRun: latestSearchRun || null,
-                lastSearchAt: latestCompletedRun?.finished_at || latestSearchRun?.finished_at || latestSearchRun?.started_at || null,
-                lastSearchStatus: latestCompletedRun?.status || latestSearchRun?.status || 'unknown',
+                // L'état affiché doit suivre le run le plus récent, même si le
+                // précédent s'est terminé en erreur. Les compteurs restent
+                // basés sur le dernier run terminé.
+                lastSearchAt: latestSearchRun?.created_at || latestCompletedRun?.finished_at || null,
+                lastSearchStatus: latestSearchRun?.status || latestCompletedRun?.status || 'unknown',
                 lastAnalyzedJobs: Number(latestCompletedRun?.analyzed_jobs_count || latestSearchRun?.analyzed_jobs_count || 0),
                 lastNewJobs: Number(latestCompletedRun?.saved_jobs_count || latestSearchRun?.saved_jobs_count || 0)
             };

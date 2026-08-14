@@ -380,8 +380,13 @@ async function loadSystemStatus() {
 
 async function deleteJob(id) {
     if (confirm('Supprimer cette offre de la liste ?')) {
-        await api(`/jobs/${id}`, 'DELETE');
-        loadJobs();
+        try {
+            await api(`/jobs/${id}`, 'DELETE');
+            await loadJobs();
+        } catch (error) {
+            console.error(`Erreur suppression offre ${id}:`, error);
+            alert(error.message || 'Impossible de supprimer cette offre.');
+        }
     }
 }
 

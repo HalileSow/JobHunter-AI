@@ -1061,25 +1061,34 @@ function createApp() {
         }
     });
 
-    app.delete('/api/jobs/:id', async (req, res) => {
+    app.delete('/api/jobs/:id', auth, async (req, res) => {
         try {
+            const jobId = Number(req.params.id);
+            if (!Number.isInteger(jobId) || jobId <= 0) {
+                return res.status(400).json({ error: 'Identifiant d’offre invalide.' });
+            }
+
             const changes = await withDb((db) => db.transaction(async (trx) => {
                 const job = await trx('jobs')
                     .select('id')
-                    .where({ id: req.params.id, user_id: req.user.id })
+                    .where({ id: jobId, user_id: req.user.id })
                     .first();
 
                 if (!job) return 0;
 
+                // Supprimer explicitement toutes les dépendances avant l’offre.
+                // Cela reste fiable même si la contrainte FK n’a pas CASCADE.
+                await trx('application_attempts').where({ job_id: job.id }).del();
                 await trx('job_logs').where({ job_id: job.id }).del();
                 return trx('jobs')
                     .where({ id: job.id, user_id: req.user.id })
                     .del();
             }));
             if (!changes) return res.status(404).json({ error: 'Offre introuvable.' });
-            broadcast('job_deleted', { id: req.params.id }, req.user.id);
+            broadcast('job_deleted', { id: jobId }, req.user.id);
             res.json({ success: true });
-        } catch {
+        } catch (error) {
+            console.error(`[API] Suppression offre échouée id=${req.params.id} user_id=${req.user?.id}:`, error.stack || error.message);
             res.status(500).json({ error: 'Impossible de supprimer cette offre.' });
         }
     });

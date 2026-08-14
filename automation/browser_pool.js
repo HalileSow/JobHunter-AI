@@ -184,7 +184,10 @@ export async function createPageWithRetry(browser, lock, maxRetries = 1) {
         try {
             context = await createBrowserContext(browser);
             const page = await context.newPage();
-            return { context, page };
+            // Le retry peut avoir réacquis un lock différent. Le retourner est
+            // indispensable pour que l'appelant libère le bon lock dans son
+            // bloc finally.
+            return { context, page, lock };
         } catch (error) {
             // Si le browser a crashé, essayer de le recréer
             if (attempt < maxRetries && /closed|disconnected|target/i.test(error.message)) {

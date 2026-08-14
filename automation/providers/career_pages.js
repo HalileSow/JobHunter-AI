@@ -37,6 +37,7 @@ export async function searchJobs(country, jobTitle, keywords) {
         const pageResult = await createPageWithRetry(browser, lock);
         context = pageResult.context;
         page = pageResult.page;
+        lock = pageResult.lock;
 
         const query = `${jobTitle} ${keywords}`;
 

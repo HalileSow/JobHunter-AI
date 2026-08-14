@@ -278,6 +278,7 @@ export async function automateApplication({ job, profile, tailoredCvPath, letter
         const pageResult = await createPageWithRetry(browser, lock);
         context = pageResult.context;
         page = pageResult.page;
+        lock = pageResult.lock;
         await page.goto(job.link, { waitUntil: 'domcontentloaded', timeout: timeoutMs });
         await page.waitForTimeout(500);
 

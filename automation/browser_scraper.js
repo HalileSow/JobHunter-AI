@@ -24,6 +24,7 @@ export async function browserScrape(url, selector, titleSelector, companySelecto
     const pageResult = await createPageWithRetry(browser, lock);
     context = pageResult.context;
     page = pageResult.page;
+    lock = pageResult.lock;
 
     console.log(`🌐 Navigation vers : ${url}...`);
     await page.goto(url, {

@@ -4,7 +4,7 @@ import jwt from 'jsonwebtoken';
 import bcrypt from 'bcrypt';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { initDb } from '../automation/db.js';
+import { initDb, destroyDb } from '../automation/db.js';
 import { submitJob, confirmUserSubmission } from '../automation/submission_engine.js';
 import { defaultRegistry } from '../automation/providers/registry.js';
 import { backupDatabase } from '../automation/backup_db.js';
@@ -1456,7 +1456,10 @@ if (path.resolve(process.argv[1] || '') === fileURLToPath(import.meta.url)) {
         });
 
         // Arrêt gracieux : fermer proprement les connexions et le scheduler
+        let shuttingDown = false;
         const gracefulShutdown = async (signal) => {
+            if (shuttingDown) return;
+            shuttingDown = true;
             console.log(`\n⚠️ Signal ${signal} reçu. Arrêt gracieux en cours...`);
 
             stopScheduler();
@@ -1468,8 +1471,7 @@ if (path.resolve(process.argv[1] || '') === fileURLToPath(import.meta.url)) {
             await new Promise((resolve) => server.close(resolve));
 
             // Fermer le pool de connexions Knex
-            const { db } = await import('../automation/db.js');
-            await db.destroy();
+            await destroyDb();
 
             console.log('✅ Arrêt terminé. À bientôt !');
             process.exit(0);

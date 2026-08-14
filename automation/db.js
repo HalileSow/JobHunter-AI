@@ -51,6 +51,14 @@ async function insertAndGetId(table, values) {
     return row?.id ?? row;
 }
 
+async function destroyDb() {
+    if (!dbInstance) return;
+    const instance = dbInstance;
+    dbInstance = null;
+    currentDbPath = null;
+    await instance.destroy();
+}
+
 // Pour garantir que les tests ne partagent pas d'instance, on exporte une fonction.
 // On garde dbInstance pour le module, mais on force initDb à gérer la recréation.
-export { initDb, insertAndGetId };
+export { initDb, insertAndGetId, destroyDb };

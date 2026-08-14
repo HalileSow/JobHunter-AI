@@ -279,17 +279,26 @@ export async function executeMultiProviderSearch({ country, jobTitle, keywords =
     // Découper les providers en lots de CONCURRENCY_LIMIT maximum
     const executeProviderWithTimeout = async (provider) => {
         let timeoutHandle = null;
+        let timeoutTriggered = false;
+        const providerPromise = Promise.resolve().then(() => provider.searchJobs(searchParams));
         try {
             const timeoutPromise = new Promise((_, reject) => {
-                timeoutHandle = setTimeout(() => reject(new Error(`Timeout provider ${provider.name}`)), timeoutMs);
+                timeoutHandle = setTimeout(() => {
+                    timeoutTriggered = true;
+                    reject(new Error(`Timeout provider ${provider.name}`));
+                }, timeoutMs);
             });
 
             return await Promise.race([
-                provider.searchJobs(searchParams),
+                providerPromise,
                 timeoutPromise
             ]);
         } catch (err) {
             console.error(`❌ Échec ou timeout sur ${provider.name} : ${err.message}`);
+            // Un timeout Promise.race n'annule pas le provider. Attendre sa
+            // terminaison avant de passer au suivant évite de réutiliser le
+            // browser pendant qu'une page/context est encore actif.
+            if (timeoutTriggered) await providerPromise.catch(() => {});
             return [];
         } finally {
             if (timeoutHandle) clearTimeout(timeoutHandle);

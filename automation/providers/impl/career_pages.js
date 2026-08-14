@@ -49,6 +49,7 @@ export class CareerPagesProvider extends BaseProvider {
             const pageResult = await createPageWithRetry(browser, lock);
             context = pageResult.context;
             page = pageResult.page;
+            lock = pageResult.lock;
 
             const query = `${jobTitle} ${keywords}`.trim();
 

@@ -4,6 +4,27 @@ import { launchSearchRun } from './search_run_launcher.js';
 import { runFullJobHunterSearch } from './search_engine.js';
 import { processJobSubmission } from './submission_engine.js';
 import { notifyUserJob } from './notifications.js';
+import { closeBrowser } from './browser_pool.js';
+
+const SCHEDULED_SEARCH_TIMEOUT_MS = Number(process.env.SCHEDULED_SEARCH_TIMEOUT_MS || 7 * 60 * 1000);
+
+async function runSearchWithTimeout(searchPromise, label) {
+    let timeoutHandle;
+    const timeoutPromise = new Promise((_, reject) => {
+        timeoutHandle = setTimeout(() => {
+            reject(new Error(`Recherche planifiée interrompue après ${Math.round(SCHEDULED_SEARCH_TIMEOUT_MS / 60000)} minutes (${label}).`));
+        }, SCHEDULED_SEARCH_TIMEOUT_MS);
+    });
+
+    try {
+        return await Promise.race([searchPromise, timeoutPromise]);
+    } catch (error) {
+        await closeBrowser().catch(() => {});
+        throw error;
+    } finally {
+        if (timeoutHandle) clearTimeout(timeoutHandle);
+    }
+}
 
 function parseProviderSelection(rawValue) {
     if (Array.isArray(rawValue)) return rawValue;
@@ -164,7 +185,7 @@ async function tick() {
 
         try {
             // 1. Exécution du pipeline complet de recherche et scoring
-            const result = await runFullJobHunterSearch({
+            const result = await runSearchWithTimeout(runFullJobHunterSearch({
                 country: schedule.country,
                 jobTitle: schedule.title,
                 keywords: schedule.keywords || '',
@@ -172,7 +193,7 @@ async function tick() {
                 lang: schedule.lang || 'fr',
                 selectedProviderIds: parseProviderSelection(schedule.providers_list),
                 userId
-            });
+            }), schedule.name);
 
             // 2. Traitement automatique des soumissions pour les offres sauvegardées
             for (const job of result.jobs) {

@@ -93,7 +93,10 @@ export function matchesSalaryFilter(jobSalary, { salary, minSalary, maxSalary } 
     if (filterMin === null && filterMax === null) return true;
 
     const range = parseSalaryRange(jobSalary);
-    if (!range) return false;
+    // Un salaire absent ne signifie pas que l’offre est hors budget. La
+    // plupart des job boards renvoient N/A ; l’exclure ici supprimait toutes
+    // les offres dès qu’une fourchette était renseignée.
+    if (!range) return true;
 
     if (filterMin !== null && range.max < filterMin) return false;
     if (filterMax !== null && range.min > filterMax) return false;

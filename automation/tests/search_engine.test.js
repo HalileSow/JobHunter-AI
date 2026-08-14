@@ -63,6 +63,9 @@ describe('parseSalaryRange', () => {
 });
 
 describe('matchesSalaryFilter', () => {
+  it('conserve les offres dont le salaire n’est pas communiqué', () => {
+    assert.equal(matchesSalaryFilter('N/A', { minSalary: '2000', maxSalary: '3000' }), true);
+  });
     it('valide une offre quand le salaire correspond au minimum demandé', () => {
         assert.equal(matchesSalaryFilter('45k - 55k', { salary: '50000' }), true);
         assert.equal(matchesSalaryFilter('45k - 55k', { salary: '60000' }), false);

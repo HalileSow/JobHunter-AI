@@ -2,7 +2,7 @@ import { BaseProvider } from '../base_provider.js';
 import fs from 'fs/promises';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { getBrowser, releaseBrowser, createPageWithRetry } from '../../browser_pool.js';
+import { getBrowser, releaseBrowser, closeBrowser, createPageWithRetry } from '../../browser_pool.js';
 import { callGemini } from '../../ai_engine.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -133,6 +133,7 @@ Si aucune offre pertinente, réponds avec [].`;
             // OPTIMISATION MÉMOIRE : Fermer le context et libérer le lock
             if (page) await page.close().catch(() => {});
             if (context) await context.close().catch(() => {});
+            await closeBrowser();
             if (lock) releaseBrowser(lock);
         }
 

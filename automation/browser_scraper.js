@@ -1,4 +1,4 @@
-import { getBrowser, releaseBrowser, createPageWithRetry } from './browser_pool.js';
+import { getBrowser, releaseBrowser, closeBrowser, createPageWithRetry } from './browser_pool.js';
 
 /**
  * Scrape des offres d'emploi en simulant un vrai navigateur.
@@ -64,9 +64,10 @@ export async function browserScrape(url, selector, titleSelector, companySelecto
     console.error("❌ Erreur lors du scraping navigateur :", error.message);
     return [];
   } finally {
-    // OPTIMISATION MÉMOIRE : Fermer le context et libérer le lock, pas le browser
+    // Sur Render Free, Chromium ne doit pas rester en mémoire entre providers.
     if (page) await page.close().catch(() => {});
     if (context) await context.close().catch(() => {});
+    await closeBrowser();
     if (lock) releaseBrowser(lock);
   }
 }

@@ -141,6 +141,18 @@ async function tick() {
             maxSalary: schedule.max_salary || ''
         };
 
+        // Réserver immédiatement le prochain créneau avant de lancer
+        // Playwright. Si Render redémarre pendant la recherche, le scheduler
+        // ne doit pas considérer l'ancien next_run_at comme dû et démarrer un
+        // second Chromium en parallèle.
+        const nextRun = computeNextRun(schedule.cron_expression, now);
+        await db('scheduled_searches').where({ id: schedule.id }).update({
+            last_run_at: db.fn.now(),
+            next_run_at: nextRun ? nextRun.toISOString() : null,
+            last_status: 'running',
+            last_error: null
+        });
+
         const runId = await insertAndGetId('search_runs', {
             country: schedule.country,
             title: schedule.title,
@@ -190,7 +202,6 @@ async function tick() {
             });
 
             // 4. Mise à jour du schedule
-            const nextRun = computeNextRun(schedule.cron_expression);
             await db('scheduled_searches').where({ id: schedule.id }).update({
                 last_run_at: db.fn.now(),
                 next_run_at: nextRun ? nextRun.toISOString() : null,
@@ -206,6 +217,8 @@ async function tick() {
                 finished_at: db.fn.now()
             });
             await db('scheduled_searches').where({ id: schedule.id }).update({
+                last_run_at: db.fn.now(),
+                next_run_at: nextRun ? nextRun.toISOString() : null,
                 last_status: 'error',
                 last_error: error.message
             });

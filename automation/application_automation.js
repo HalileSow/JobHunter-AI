@@ -1,7 +1,7 @@
 import fs from 'fs/promises';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { getBrowser, releaseBrowser, createPageWithRetry } from './browser_pool.js';
+import { getBrowser, releaseBrowser, closeBrowser, createPageWithRetry } from './browser_pool.js';
 import { exportCvToPdf } from './cv_exporter.js';
 
 import { sanitizeFilename, buildPdfFileName } from './sanitize_filename.js';
@@ -380,9 +380,11 @@ export async function automateApplication({ job, profile, tailoredCvPath, letter
         };
         return result;
     } finally {
-        // OPTIMISATION MÉMOIRE : Fermer le context et libérer le lock, pas le browser
+        // Fermer Chromium après chaque automatisation pour éviter une hausse
+        // cumulative de la mémoire du navigateur.
         if (page) await page.close().catch(() => undefined);
         if (context) await context.close().catch(() => undefined);
+        await closeBrowser();
         if (lock) releaseBrowser(lock);
     }
 }

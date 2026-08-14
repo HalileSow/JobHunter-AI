@@ -1,7 +1,7 @@
 import fs from 'fs/promises';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { getBrowser, releaseBrowser, createPageWithRetry } from '../browser_pool.js';
+import { getBrowser, releaseBrowser, closeBrowser, createPageWithRetry } from '../browser_pool.js';
 import { callGemini } from '../ai_engine.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -109,9 +109,10 @@ Si aucune offre ne correspond, retourne un tableau vide : []`;
     } catch (err) {
         console.error(`❌ Erreur Playwright CareerPages:`, err.message);
     } finally {
-        // OPTIMISATION MÉMOIRE : Fermer le context et libérer le lock
+        // Libérer aussi le processus Chromium entre les providers.
         if (page) await page.close().catch(() => {});
         if (context) await context.close().catch(() => {});
+        await closeBrowser();
         if (lock) releaseBrowser(lock);
     }
 

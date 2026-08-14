@@ -267,7 +267,16 @@ function getStatusClass(status) {
 
 // Dashboard: Load Jobs
 async function loadJobs() {
-    const jobs = await api('/jobs');
+    let jobs;
+    try {
+        jobs = await api('/jobs');
+    } catch (error) {
+        const message = `<p class="empty-state">${escapeHtml(error.message || 'Impossible de charger les offres.')}</p>`;
+        document.getElementById('jobs-list-to-process')?.replaceChildren();
+        document.getElementById('jobs-list-submitted')?.replaceChildren();
+        document.getElementById('jobs-list-to-process')?.insertAdjacentHTML('beforeend', message);
+        return;
+    }
     const toProcessList = document.getElementById('jobs-list-to-process');
     const submittedList = document.getElementById('jobs-list-submitted');
     const totalEl = document.getElementById('total-jobs');
@@ -562,9 +571,10 @@ document.getElementById('btn-launch-search').addEventListener('click', async () 
     btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Recherche & IA en cours...';
     
     try {
-        await api('/search', 'POST', data);
+        const result = await api('/search', 'POST', data);
         alert("Recherche multi-providers lancée en arrière-plan (24/7). Les résultats apparaîtront dans le tableau de bord !");
         loadSearchRuns();
+        if (result.runId) waitForSearchCompletion(result.runId);
     } catch (e) {
         alert(e.message);
     } finally {
@@ -572,6 +582,24 @@ document.getElementById('btn-launch-search').addEventListener('click', async () 
         btn.innerHTML = '<i class="fas fa-rocket"></i> Lancer la recherche multi-providers';
     }
 });
+
+async function waitForSearchCompletion(runId) {
+    const deadline = Date.now() + 10 * 60 * 1000;
+    while (Date.now() < deadline) {
+        await new Promise(resolve => setTimeout(resolve, 3000));
+        try {
+            const runs = await api('/search-runs');
+            const run = runs.find(item => Number(item.id) === Number(runId));
+            if (!run || !['completed', 'failed'].includes(run.status)) continue;
+            await loadJobs();
+            await loadSystemStatus();
+            await loadSearchRuns();
+            return;
+        } catch {
+            // SSE/refresh will retry while the search is running.
+        }
+    }
+}
 
 // CVS: Load List
 async function loadCvs() {

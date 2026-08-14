@@ -26,7 +26,10 @@ export async function launchSearchRun({
 
     const db = await initDb();
     const payload = {
-        ...advancedFilters,
+        // Keep the payload shape in sync with scheduled_search_runner.js.
+        // Flattening these fields made the runner silently discard all
+        // advanced filters because it only reads payload.advancedFilters.
+        advancedFilters: advancedFilters || {},
         selectedProviderIds,
         runId,
         scheduleId,

@@ -1043,7 +1043,17 @@ function createApp() {
 
     app.delete('/api/admin/force-clear-jobs', auth, async (req, res) => {
         try {
-            await withDb((db) => db('jobs').where({ user_id: req.user.id }).del());
+            await withDb((db) => db.transaction(async (trx) => {
+                const jobs = await trx('jobs')
+                    .select('id')
+                    .where({ user_id: req.user.id });
+
+                if (jobs.length > 0) {
+                    const jobIds = jobs.map(({ id }) => id);
+                    await trx('job_logs').whereIn('job_id', jobIds).del();
+                    await trx('jobs').whereIn('id', jobIds).del();
+                }
+            }));
             broadcast('jobs_refreshed', {}, req.user.id);
             res.json({ success: true, message: 'All jobs for this user have been cleared.' });
         } catch (error) {
@@ -1053,7 +1063,19 @@ function createApp() {
 
     app.delete('/api/jobs/:id', async (req, res) => {
         try {
-            const changes = await withDb((db) => db('jobs').where({ id: req.params.id, user_id: req.user.id }).del());
+            const changes = await withDb((db) => db.transaction(async (trx) => {
+                const job = await trx('jobs')
+                    .select('id')
+                    .where({ id: req.params.id, user_id: req.user.id })
+                    .first();
+
+                if (!job) return 0;
+
+                await trx('job_logs').where({ job_id: job.id }).del();
+                return trx('jobs')
+                    .where({ id: job.id, user_id: req.user.id })
+                    .del();
+            }));
             if (!changes) return res.status(404).json({ error: 'Offre introuvable.' });
             broadcast('job_deleted', { id: req.params.id }, req.user.id);
             res.json({ success: true });

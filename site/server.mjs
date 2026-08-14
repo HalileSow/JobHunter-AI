@@ -1041,6 +1041,16 @@ function createApp() {
         }
     });
 
+    app.delete('/api/admin/force-clear-jobs', auth, async (req, res) => {
+        try {
+            await withDb((db) => db('jobs').where({ user_id: req.user.id }).del());
+            broadcast('jobs_refreshed', {}, req.user.id);
+            res.json({ success: true, message: 'All jobs for this user have been cleared.' });
+        } catch (error) {
+            res.status(500).json({ error: 'Failed to clear jobs: ' + error.message });
+        }
+    });
+
     app.delete('/api/jobs/:id', async (req, res) => {
         try {
             const changes = await withDb((db) => db('jobs').where({ id: req.params.id, user_id: req.user.id }).del());

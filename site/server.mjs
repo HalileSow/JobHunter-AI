@@ -25,7 +25,6 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const JWT_SECRET = process.env.JWT_SECRET || (process.env.NODE_ENV === 'production'
     ? (() => { throw new Error('JWT_SECRET est obligatoire en production.'); })()
     : 'dev-secret-key');
-const GOOGLE_VERIFICATION_FILE_ALIAS = 'google359f3a2b7208e7c2.html';
 const GOOGLE_VERIFICATION_FILE = 'google359f3a2b7208e7c2.html';
 const generatedLettersDirectory = path.join(__dirname, '..', 'cover_letters', 'generated');
 const cvTemplateSourcePath = path.join(__dirname, '..', 'cv', 'cv_fr.md');
@@ -243,8 +242,6 @@ function createApp() {
     app.get('/app.js', sendSiteFile('app.js', 'application/javascript'));
     app.get('/styles.css', sendSiteFile('styles.css', 'text/css'));
     app.get(`/${GOOGLE_VERIFICATION_FILE}`, sendSiteFile(GOOGLE_VERIFICATION_FILE, 'text/html; charset=utf-8'));
-    app.get(`/${GOOGLE_VERIFICATION_FILE_ALIAS}`, sendSiteFile(GOOGLE_VERIFICATION_FILE, 'text/html; charset=utf-8'));
-
     app.get('/app', (req, res) => {
         res.sendFile(path.join(__dirname, 'index.html'));
     });

@@ -18,7 +18,7 @@ export async function callGemini(prompt) {
     if (!apiKey) throw new Error("GEMINI_API_KEY manquante");
 
     const genAI = new GoogleGenerativeAI(apiKey);
-    const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
+    const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash-lite" });
     const result = await Promise.race([
         model.generateContent(prompt),
         new Promise((_, reject) => setTimeout(() => reject(new Error('Gemini request timed out')), AI_TIMEOUT_MS))

@@ -30,7 +30,7 @@ export async function callGemini(prompt) {
 /**
  * Helper pour appeler Qwen via l'API compatible OpenAI
  */
-async function callQwen(prompt) {
+export async function callQwen(prompt) {
     const apiKey = process.env.QWEN_API_KEY;
     const baseUrl = process.env.QWEN_BASE_URL;
     if (!apiKey) throw new Error("QWEN_API_KEY manquante");
@@ -96,8 +96,8 @@ Lequel de ces CV est le plus adapté pour postuler à cette offre ?
 Réponds UNIQUEMENT avec l'ID du CV choisi (un nombre).`;
 
     try {
-        console.log("🤖 IA sélectionne le meilleur CV...");
-        const idString = await callGemini(prompt);
+        console.log("🤖 IA sélectionne le meilleur CV via Qwen...");
+        const idString = await callQwen(prompt);
         return parseInt(idString.trim());
     } catch (err) {
         console.warn(`⚠️ Erreur sélection CV : ${err.message}. Choix par défaut...`);
@@ -151,16 +151,16 @@ Réponds UNIQUEMENT en JSON avec la structure suivante :
 }`;
 
     try {
-        console.log("🤖 Tentative avec Gemini...");
-        const jsonString = await callGemini(prompt);
+        console.log("🤖 Tentative avec Qwen...");
+        const jsonString = await callQwen(prompt);
         return JSON.parse(jsonString);
-    } catch (err) {
-        console.warn(`⚠️ Gemini a échoué : ${err.message}. Bascule vers Qwen...`);
+    } catch (qwenErr) {
+        console.warn(`⚠️ Qwen a échoué : ${qwenErr.message}. Bascule vers Gemini...`);
         try {
-            const jsonString = await callQwen(prompt);
+            const jsonString = await callGemini(prompt);
             return JSON.parse(jsonString);
-        } catch (qwenErr) {
-            console.warn(`⚠️ Qwen a échoué : ${qwenErr.message}. Bascule vers OpenAI...`);
+        } catch (err) {
+            console.warn(`⚠️ Gemini a échoué : ${err.message}. Bascule vers OpenAI...`);
             try {
                 const jsonString = await callOpenAI(prompt);
                 return JSON.parse(jsonString);

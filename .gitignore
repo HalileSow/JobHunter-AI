@@ -25,3 +25,16 @@ cover_letters/generated/
 
 # User data / CVs (never commit personal CVs)
 cv/storage/
+
+# Debug / one-off scripts
+debug_*.log
+debug_*.js
+test_output*.txt
+fix_*.mjs
+fix_*.sh
+check_orphans.mjs
+
+# Temporary directories
+backup/
+backup_pre_security/
+scratch/

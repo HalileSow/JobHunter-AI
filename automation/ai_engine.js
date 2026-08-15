@@ -8,16 +8,21 @@ import OpenAI from 'openai';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 dotenv.config({ path: path.resolve(__dirname, '../.env') });
 
+const AI_TIMEOUT_MS = 60000;
+
 /**
  * Helper pour appeler Gemini
  */
 export async function callGemini(prompt) {
     const apiKey = process.env.GEMINI_API_KEY;
     if (!apiKey) throw new Error("GEMINI_API_KEY manquante");
-    
+
     const genAI = new GoogleGenerativeAI(apiKey);
     const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
-    const result = await model.generateContent(prompt);
+    const result = await Promise.race([
+        model.generateContent(prompt),
+        new Promise((_, reject) => setTimeout(() => reject(new Error('Gemini request timed out')), AI_TIMEOUT_MS))
+    ]);
     const text = result.response.text();
     return text.replace(/```json/g, '').replace(/```/g, '').trim();
 }
@@ -31,7 +36,7 @@ async function callQwen(prompt) {
     if (!apiKey) throw new Error("QWEN_API_KEY manquante");
     if (!baseUrl) throw new Error("QWEN_BASE_URL manquante");
 
-    const openai = new OpenAI({ apiKey, baseURL: baseUrl });
+    const openai = new OpenAI({ apiKey, baseURL: baseUrl, timeout: AI_TIMEOUT_MS });
     const response = await openai.chat.completions.create({
         model: process.env.QWEN_MODEL || "qwen-plus",
         messages: [{ role: "user", content: prompt }],
@@ -47,7 +52,7 @@ async function callOpenAI(prompt) {
     const apiKey = process.env.OPENAI_API_KEY;
     if (!apiKey) throw new Error("OPENAI_API_KEY manquante");
 
-    const openai = new OpenAI({ apiKey });
+    const openai = new OpenAI({ apiKey, timeout: AI_TIMEOUT_MS });
     const response = await openai.chat.completions.create({
         model: "gpt-4o-mini",
         messages: [{ role: "user", content: prompt }],

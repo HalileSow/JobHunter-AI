@@ -192,10 +192,10 @@ export async function createPageWithRetry(browser, lock, maxRetries = 1) {
             // Si le browser a crashé, essayer de le recréer
             if (attempt < maxRetries && /closed|disconnected|target/i.test(error.message)) {
                 console.warn(`⚠️ [BrowserPool] Browser crashé lors de newPage(), tentative de recréation (${attempt + 1}/${maxRetries})...`);
-                
+
                 // Fermer le context s'il a été créé
                 if (context) await context.close().catch(() => {});
-                
+
                 // Libérer et réacquérir le lock pour recréer le browser
                 releaseBrowserLock(lock);
                 const newResult = await getBrowser();
@@ -209,3 +209,15 @@ export async function createPageWithRetry(browser, lock, maxRetries = 1) {
         }
     }
 }
+
+// Ensure Chromium is cleaned up if the process exits unexpectedly
+function setupExitHandler() {
+    if (browser_pool_exit_handler_installed) return;
+    browser_pool_exit_handler_installed = true;
+    const cleanup = async () => { await closeBrowser(); };
+    process.on('exit', cleanup);
+    process.on('SIGTERM', () => { closeBrowser().catch(() => {}); });
+    process.on('SIGINT', () => { closeBrowser().catch(() => {}); });
+}
+let browser_pool_exit_handler_installed = false;
+setupExitHandler();

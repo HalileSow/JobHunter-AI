@@ -34,7 +34,7 @@ export async function browserScrape(url, selector, titleSelector, companySelecto
 
     // Petit scroll pour simuler un humain et charger le contenu dynamique
     await page.evaluate(() => window.scrollBy(0, window.innerHeight));
-    await page.waitForTimeout(1500);
+    await new Promise(r => setTimeout(r, 1500));
 
     console.log("🔍 Extraction des données...");
     const jobs = await page.evaluate(({ sel, tSel, cSel, lSel }) => {
@@ -64,10 +64,9 @@ export async function browserScrape(url, selector, titleSelector, companySelecto
     console.error("❌ Erreur lors du scraping navigateur :", error.message);
     return [];
   } finally {
-    // Sur Render Free, Chromium ne doit pas rester en mémoire entre providers.
     if (page) await page.close().catch(() => {});
     if (context) await context.close().catch(() => {});
-    await closeBrowser();
     if (lock) releaseBrowser(lock);
+    await closeBrowser();
   }
 }

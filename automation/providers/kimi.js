@@ -1,5 +1,3 @@
-mkdir -p ~/JobHunter-AI/automation/providers
-touch ~/JobHunter-AI/automation/providers/kimi.js
 import OpenAI from "openai";
 
 const client = new OpenAI({

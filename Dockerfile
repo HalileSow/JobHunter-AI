@@ -40,7 +40,7 @@ COPY --from=builder /app/site/node_modules/ ./site/node_modules/
 # Install the Chromium browser used by Playwright.
 RUN cd automation && npx playwright install chromium && npx playwright install-deps chromium
 
-EXPOSE 10000
+EXPOSE 4173
 
 # Limiter la mémoire heap Node.js à 256 Mo (laisse ~200 Mo à Chromium)
 ENV NODE_OPTIONS="--max-old-space-size=256"

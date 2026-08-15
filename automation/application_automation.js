@@ -280,7 +280,7 @@ export async function automateApplication({ job, profile, tailoredCvPath, letter
         page = pageResult.page;
         lock = pageResult.lock;
         await page.goto(job.link, { waitUntil: 'domcontentloaded', timeout: timeoutMs });
-        await page.waitForTimeout(500);
+        await new Promise(r => setTimeout(r, 500));
 
         const started = await clickApplyTrigger(page);
         if (!started) {
@@ -294,7 +294,7 @@ export async function automateApplication({ job, profile, tailoredCvPath, letter
             return result;
         }
 
-        await page.waitForTimeout(500);
+        await new Promise(r => setTimeout(r, 500));
 
         const hasForm = await page.locator('form, input[type="file"], textarea, input[type="email"], input[type="text"]').count();
         if (!hasForm) {
@@ -329,7 +329,7 @@ export async function automateApplication({ job, profile, tailoredCvPath, letter
         }
 
         await page.waitForLoadState('networkidle', { timeout: 5000 }).catch(() => undefined);
-        await page.waitForTimeout(1200);
+        await new Promise(r => setTimeout(r, 1200));
 
         const bodyText = await page.locator('body').innerText().catch(() => '');
         const url = page.url();

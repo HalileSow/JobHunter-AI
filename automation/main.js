@@ -1,6 +1,5 @@
 import { runFullJobHunterSearch } from './search_engine.js';
 import { processJobSubmission } from './submission_engine.js';
-import { defaultRegistry } from './providers/registry.js';
 import { initDb } from './db.js';
 
 export async function runSearch(country, jobTitle, keywords = '', lang = 'fr', selectedProviders = [], advancedFilters = {}) {

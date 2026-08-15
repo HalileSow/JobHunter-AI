@@ -8,7 +8,7 @@ import { initDb, destroyDb } from '../automation/db.js';
 import { submitJob, confirmUserSubmission } from '../automation/submission_engine.js';
 import { defaultRegistry } from '../automation/providers/registry.js';
 import { backupDatabase } from '../automation/backup_db.js';
-import { startScheduler, stopScheduler, restartBackupScheduler } from '../automation/scheduler.js';
+import { startScheduler, stopScheduler, restartBackupScheduler, computeNextRun } from '../automation/scheduler.js';
 import { closeBrowser } from '../automation/browser_pool.js';
 import { launchSearchRun } from '../automation/search_run_launcher.js';
 import { importDefaultCvs } from '../automation/import_default_cvs.js';
@@ -25,7 +25,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const JWT_SECRET = process.env.JWT_SECRET || (process.env.NODE_ENV === 'production'
     ? (() => { throw new Error('JWT_SECRET est obligatoire en production.'); })()
     : 'dev-secret-key');
-const GOOGLE_VERIFICATION_FILE_ALIAS = 'google359fa3a2b7208e7c2.html';
+const GOOGLE_VERIFICATION_FILE_ALIAS = 'google359f3a2b7208e7c2.html';
 const GOOGLE_VERIFICATION_FILE = 'google359f3a2b7208e7c2.html';
 const generatedLettersDirectory = path.join(__dirname, '..', 'cover_letters', 'generated');
 const cvTemplateSourcePath = path.join(__dirname, '..', 'cv', 'cv_fr.md');
@@ -179,6 +179,7 @@ function authorize(allowedRoles = []) {
 
 function createApp() {
     const app = express();
+    app.set('trust proxy', 1);
     app.use(cors());
     app.use(express.json({ limit: '2mb' }));
 
@@ -416,7 +417,6 @@ function createApp() {
     app.post('/api/auth/login', async (req, res) => {
         try {
             const email = normalizeEmail(req.body?.email);
-            if (!email) return res.status(400).json({ error: 'Email requis.' });
 
             const password = req.body?.password;
             if (!password) return res.status(400).json({ error: 'Mot de passe requis.' });
@@ -495,7 +495,6 @@ function createApp() {
             const max_salary = optionalText(req.body?.max_salary);
             const providers_list = JSON.stringify(parseProviderSelection(req.body?.providers ?? req.body?.selectedProviderIds));
 
-            const { computeNextRun } = await import('../automation/scheduler.js');
             const nextRun = computeNextRun(cron_expression);
 
             const id = await withDb((db) => insertAndGetId(db, 'scheduled_searches', {
@@ -519,7 +518,6 @@ function createApp() {
             if (enabled) {
                 const schedule = await withDb((db) => db('scheduled_searches').where({ id: req.params.id, user_id: req.user.id }).first());
                 if (!schedule) return res.status(404).json({ error: 'Recherche planifiée introuvable.' });
-                const { computeNextRun } = await import('../automation/scheduler.js');
                 const nextRun = computeNextRun(schedule.cron_expression);
                 updateData.next_run_at = nextRun ? nextRun.toISOString() : null;
             }
@@ -546,7 +544,6 @@ function createApp() {
                 const { runFullJobHunterSearch } = await import('../automation/search_engine.js');
                 const { processJobSubmission } = await import('../automation/submission_engine.js');
                 const { notifyUserJob } = await import('../automation/notifications.js');
-                const { computeNextRun } = await import('../automation/scheduler.js');
                 const db = await initDb();
 
                 const userId = schedule.user_id || (await db('users').where({ role: 'SUPER_ADMIN' }).first())?.id;
@@ -1020,21 +1017,35 @@ function createApp() {
         }
     });
 
+    app.post('/api/providers/:id/toggle', async (req, res) => {
+        if (req.user.role !== 'SUPER_ADMIN') {
+            return res.status(403).json({ error: 'Seul un administrateur peut activer/désactiver un provider.' });
+        }
+        try {
+            const { enabled } = req.body;
+            const success = defaultRegistry.setEnabled(req.params.id, Boolean(enabled));
+            if (!success) return res.status(404).json({ error: 'Provider introuvable.' });
+            res.json({ success: true, providers: defaultRegistry.getMetadataList() });
+        } catch {
+            res.status(500).json({ error: 'Impossible d\'activer/désactiver le provider.' });
+        }
+    });
+
     // Endpoints Jobs
-    app.get('/api/jobs', auth, async (req, res) => {
+    app.get('/api/jobs', async (req, res) => {
         try {
             const { country, city, contract_type, experience_level, remote, status, salary, min_salary, max_salary } = req.query;
             let query = withDb((db) => {
                 let q = db('jobs').select('*').where({ user_id: req.user.id });
                 if (country) q = q.where('country', country);
-                if (city) q = q.where('city', 'like', `%${city}%`);
+                if (city) q = q.where('city', 'like', `%${city.replace(/[%_]/g, '\\$&')}%`);
                 if (contract_type) q = q.where('contract_type', contract_type);
                 if (experience_level) q = q.where('experience_level', experience_level);
                 if (remote) q = q.where('remote', remote);
                 if (status) q = q.where('status', status);
-                if (salary) q = q.where('salary', 'like', `%${salary}%`);
-                if (min_salary) q = q.where('salary', 'like', `%${min_salary}%`);
-                if (max_salary) q = q.where('salary', 'like', `%${max_salary}%`);
+                if (salary) q = q.where('salary', 'like', `%${salary.replace(/[%_]/g, '\\$&')}%`);
+                if (min_salary) q = q.where('salary', 'like', `%${min_salary.replace(/[%_]/g, '\\$&')}%`);
+                if (max_salary) q = q.where('salary', 'like', `%${max_salary.replace(/[%_]/g, '\\$&')}%`);
                 return q.orderBy('score', 'desc').orderBy('created_at', 'desc');
             });
             const jobs = await query;
@@ -1444,6 +1455,15 @@ function createApp() {
         } catch (error) {
             res.status(400).json({ error: error.message || 'Paramètres de recherche invalides.' });
         }
+    });
+
+    // Global error handler — returns JSON instead of Express default HTML
+    app.use((err, req, res, _next) => {
+        console.error(`[ERROR] ${req.method} ${req.path}:`, err.stack || err.message);
+        const message = process.env.NODE_ENV === 'production'
+            ? 'Erreur interne du serveur.'
+            : (err.message || 'Erreur interne du serveur.');
+        res.status(err.status || 500).json({ error: message });
     });
 
     return app;

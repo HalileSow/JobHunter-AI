@@ -366,7 +366,7 @@ const intentPages = [
             }
         ],
         related: [
-            { label: 'IA pour trouver un emploi', href: '/recherche-emploi-avec-ia' },
+            { label: 'Alertes emploi automatiques', href: '/alertes-emploi-automatiques' },
             { label: 'CV IA', href: '/cv-ia' },
             { label: 'Lettre de motivation IA', href: '/lettre-motivation-ia' }
         ]

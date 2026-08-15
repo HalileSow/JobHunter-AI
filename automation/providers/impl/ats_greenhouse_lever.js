@@ -63,6 +63,38 @@ export class AtsProvider extends BaseProvider {
                             });
                         });
                     }
+                } else if (board.ats === 'lever') {
+                    const url = `https://api.lever.co/v0/postings/${board.boardToken}?mode=json`;
+                    const res = await axios.get(url, { timeout: 5000 });
+                    if (res.data && Array.isArray(res.data)) {
+                        const matched = res.data.filter(j => {
+                            const jt = (j.text || j.title || '').toLowerCase();
+                            if (jt.includes(titleLower)) return true;
+                            const matchCount = titleWords.filter(w => jt.includes(w)).length;
+                            return titleWords.length > 0 && matchCount >= Math.ceil(titleWords.length * 0.6);
+                        });
+                        matched.slice(0, MAX_PER_COMPANY).forEach(j => {
+                            const locName = j.categories?.location || 'International / Multiple';
+                            const isRemote = locName.toLowerCase().includes('remote') || locName.toLowerCase().includes('virtual');
+                            const jobUrl = j.hostedUrl || j.applyUrl || `https://jobs.lever.co/${board.boardToken}`;
+                            results.push({
+                                title: j.text || j.title,
+                                company: board.company,
+                                link: jobUrl,
+                                location: locName,
+                                city: city || '',
+                                salary: 'Selon grille entreprise',
+                                contract_type: j.categories?.commitment || contractType || 'CDI / Full-time',
+                                experience_level: experienceLevel || '',
+                                remote: isRemote ? 'full_remote' : (remote || 'on_site'),
+                                job_type: jobType || 'full_time',
+                                date_posted: j.createdAt ? new Date(j.createdAt / 1000).toISOString().split('T')[0] : new Date().toISOString().split('T')[0],
+                                provider: this.id,
+                                provider_name: `${this.name} (${board.company})`,
+                                description: `Poste de ${j.text || j.title} chez ${board.company} géré par Lever ATS.`
+                            });
+                        });
+                    }
                 }
             } catch (e) {
                 // Ignore individual board fetch error

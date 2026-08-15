@@ -1,3 +1,21 @@
 jobhunter-ai.duckdns.org {
     reverse_proxy app:4173
+
+    # Security headers
+    header {
+        X-Content-Type-Options nosniff
+        X-Frame-Options DENY
+        Referrer-Policy strict-origin-when-cross-origin
+        Permissions-Policy "camera=(), microphone=(), geolocation=()"
+        -Server
+    }
+
+    # Compression
+    encode gzip zstd
+
+    # Logging
+    log {
+        output stdout
+        format json
+    }
 }

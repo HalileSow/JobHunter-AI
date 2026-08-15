@@ -60,7 +60,7 @@ export class CareerPagesProvider extends BaseProvider {
                 try {
                     await page.goto(searchUrl, { waitUntil: 'domcontentloaded', timeout: 25000 });
                     await page.evaluate(() => window.scrollBy(0, window.innerHeight / 2));
-                    await page.waitForTimeout(1500);
+                    await new Promise(r => setTimeout(r, 1500));
 
                     const bodyText = await page.innerText('body');
                     if (bodyText.length < 150) continue;
@@ -133,8 +133,8 @@ Si aucune offre pertinente, réponds avec [].`;
             // OPTIMISATION MÉMOIRE : Fermer le context et libérer le lock
             if (page) await page.close().catch(() => {});
             if (context) await context.close().catch(() => {});
-            await closeBrowser();
             if (lock) releaseBrowser(lock);
+            await closeBrowser();
         }
 
         return results.slice(0, limit);

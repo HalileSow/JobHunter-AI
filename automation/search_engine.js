@@ -1,7 +1,7 @@
 import crypto from 'crypto';
 import { defaultRegistry } from './providers/registry.js';
-import { analyzeJob, selectBestCv } from './ai_engine.js';
-import { getAllCvs, getPrimaryCv, getActiveCvPath, readCvContent } from './cv_manager.js';
+import { analyzeJob } from './ai_engine.js';
+import { getPrimaryCv, getActiveCvPath, readCvContent } from './cv_manager.js';
 import { exportLetterToPdf } from './pdf_exporter.js';
 import { buildPdfFileName } from './sanitize_filename.js';
 import { initDb, insertAndGetId } from './db.js';
@@ -548,7 +548,7 @@ export async function runFullJobHunterSearch({ country, jobTitle, keywords = '',
                 auto_apply_supported: isAutoApplySupported
             });
 
-            const insertedJob = await db('jobs').where({ id: insertedId.id || insertedId }).first();
+            const insertedJob = await db('jobs').where({ id: insertedId?.id ?? insertedId }).first();
             processedJobs.push(insertedJob);
 
             console.log(`💾 Offre enregistrée (ID: ${insertedJob.id}, User: ${userId}) | Score: ${insertedJob.score}/100`);

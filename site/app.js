@@ -145,6 +145,7 @@ function initAuth() {
 function initApp() {
     initSSE();
     loadJobs().catch(err => console.error('loadJobs error:', err.message));
+    loadSearchRuns().catch(err => console.error('loadSearchRuns error:', err.message));
     loadSystemStatus().catch(err => console.error('loadSystemStatus error:', err.message));
     startDashboardAutoRefresh();
 }
@@ -573,7 +574,11 @@ document.getElementById('btn-launch-search').addEventListener('click', async () 
     try {
         const result = await api('/search', 'POST', data);
         alert("Recherche multi-providers lancée en arrière-plan (24/7). Les résultats apparaîtront dans le tableau de bord !");
-        loadSearchRuns();
+        await loadSearchRuns();
+        await loadSystemStatus();
+        // The run is asynchronous: refresh immediately so the dashboard shows
+        // the queued/running search, then refresh again when it completes.
+        await loadJobs();
         if (result.runId) waitForSearchCompletion(result.runId);
     } catch (e) {
         alert(e.message);
@@ -725,8 +730,7 @@ const runStatusLabels = {
 async function loadSearchRuns() {
     try {
         const runs = await api('/search-runs');
-        const list = document.getElementById('search-runs-list');
-        list.innerHTML = runs.length ? runs.map((run) => `
+        const markup = runs.length ? runs.map((run) => `
             <article class="run-card" style="display: flex; justify-content: space-between; align-items: center; gap: 12px; background: #1e293b; padding: 12px; border-radius: 6px; margin-bottom: 8px;">
                 <div>
                     <strong style="color: #f8fafc;">${escapeHtml(run.title)}</strong>
@@ -738,12 +742,20 @@ async function loadSearchRuns() {
                         <span style="margin: 0 6px;">|</span>
                         <i class="fas fa-layer-group"></i> Doublons: ${Number(run.duplicate_jobs_count || 0)}
                     </div>
+                    ${run.error ? `<div style="color: #fca5a5; font-size: 0.8rem; margin-top: 5px;"><i class="fas fa-exclamation-triangle"></i> ${escapeHtml(run.error)}</div>` : ''}
                 </div>
                 <span class="run-status status-${escapeHtml(run.status)}" style="font-size: 0.8rem; font-weight: 600;">${runStatusLabels[run.status] || 'Inconnue'}</span>
             </article>
         `).join('') : '<p class="empty-state">Aucune recherche lancée.</p>';
+        for (const id of ['search-runs-list', 'dashboard-search-runs-list']) {
+            const list = document.getElementById(id);
+            if (list) list.innerHTML = markup;
+        }
     } catch (error) {
-        document.getElementById('search-runs-list').innerHTML = `<p class="empty-state">${escapeHtml(error.message)}</p>`;
+        for (const id of ['search-runs-list', 'dashboard-search-runs-list']) {
+            const list = document.getElementById(id);
+            if (list) list.innerHTML = `<p class="empty-state">${escapeHtml(error.message)}</p>`;
+        }
     }
 }
 

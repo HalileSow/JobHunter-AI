@@ -145,7 +145,6 @@ function initAuth() {
 function initApp() {
     initSSE();
     loadJobs().catch(err => console.error('loadJobs error:', err.message));
-    loadSearchRuns().catch(err => console.error('loadSearchRuns error:', err.message));
     loadSystemStatus().catch(err => console.error('loadSystemStatus error:', err.message));
     startDashboardAutoRefresh();
 }
@@ -747,15 +746,11 @@ async function loadSearchRuns() {
                 <span class="run-status status-${escapeHtml(run.status)}" style="font-size: 0.8rem; font-weight: 600;">${runStatusLabels[run.status] || 'Inconnue'}</span>
             </article>
         `).join('') : '<p class="empty-state">Aucune recherche lancée.</p>';
-        for (const id of ['search-runs-list', 'dashboard-search-runs-list']) {
-            const list = document.getElementById(id);
-            if (list) list.innerHTML = markup;
-        }
+        const list = document.getElementById('search-runs-list');
+        if (list) list.innerHTML = markup;
     } catch (error) {
-        for (const id of ['search-runs-list', 'dashboard-search-runs-list']) {
-            const list = document.getElementById(id);
-            if (list) list.innerHTML = `<p class="empty-state">${escapeHtml(error.message)}</p>`;
-        }
+        const list = document.getElementById('search-runs-list');
+        if (list) list.innerHTML = `<p class="empty-state">${escapeHtml(error.message)}</p>`;
     }
 }
 

@@ -1403,7 +1403,8 @@ function createApp() {
         try {
             const runs = await withDb((db) => db('search_runs').select('*').where({ user_id: req.user.id }).orderBy('created_at', 'desc').orderBy('id', 'desc').limit(20));
             res.json(runs);
-        } catch {
+        } catch (error) {
+            console.error(`[search-runs] Erreur pour user_id=${req.user?.id}:`, error);
             res.status(500).json({ error: 'Impossible de charger les recherches.' });
         }
     });

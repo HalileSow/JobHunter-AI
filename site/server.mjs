@@ -1108,10 +1108,14 @@ function createApp() {
             }
 
             const changes = await withDb((db) => db.transaction(async (trx) => {
-                const job = await trx('jobs')
-                    .select('id')
-                    .where({ id: jobId, user_id: req.user.id })
-                    .first();
+                const query = trx('jobs').select('id');
+                // SUPER_ADMIN peut supprimer n'importe quelle offre
+                if (req.user.role === 'SUPER_ADMIN') {
+                    query.where({ id: jobId });
+                } else {
+                    query.where({ id: jobId, user_id: req.user.id });
+                }
+                const job = await query.first();
 
                 if (!job) return 0;
 

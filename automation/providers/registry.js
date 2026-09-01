@@ -14,14 +14,32 @@ export class ProviderRegistry {
     }
 
     registerBuiltInProviders() {
-        this.register(new LinkedInProvider());
-        this.register(new IndeedProvider());
+        // Providers sans Chromium (API) — activés par défaut
         this.register(new AdzunaProvider());
         this.register(new FranceTravailProvider());
         this.register(new RemotiveProvider());
         this.register(new AtsProvider());
+        // Providers avec Chromium (Playwright) — désactivés par défaut
+        // car ils consomment trop de mémoire sur Render Starter (512 Mo).
+        // Réactivable via l'interface admin.
+        this.register(new LinkedInProvider());
+        this.register(new IndeedProvider());
         this.register(new CareerPagesProvider());
         this.register(new GenericCustomProvider());
+        this._disableChromiumProviders();
+    }
+
+    /**
+     * Désactive les providers qui nécessitent Chromium/Playwright
+     * pour éviter les OOM kills sur Render Starter.
+     */
+    _disableChromiumProviders() {
+        const chromiumProviders = ['linkedin', 'indeed', 'career_pages', 'generic_custom'];
+        for (const id of chromiumProviders) {
+            const p = this.get(id);
+            if (p) p.enabled = false;
+        }
+        console.log('🔌 Providers Chromium désactivés par défaut (économie mémoire).');
     }
 
     /**

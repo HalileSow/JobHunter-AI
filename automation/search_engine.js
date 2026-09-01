@@ -271,7 +271,9 @@ export async function executeMultiProviderSearch({ country, jobTitle, keywords =
     console.log(`🌐 Recherche séquentielle sur ${providersToUse.length} provider(s) : ${providersToUse.map(p => p.name).join(', ')}...`);
     console.log(`📋 Filtres : pays=${country}, ville=${city || '—'}, expérience=${experienceLevel || '—'}, contrat=${contractType || '—'}, remote=${remote || '—'}, type=${jobType || '—'}, salaire=${salary || minSalary || maxSalary || '—'}`);
 
-    const timeoutMs = 30000;
+    // Porté à 60s car Chromium peut prendre 30-40s à démarrer
+    // pour les providers LinkedIn, Indeed, Career Pages.
+    const timeoutMs = 60000;
 
     // OPTIMISATION MÉMOIRE : Exécution séquentielle (1 provider à la fois)
     // pour éviter de lancer plusieurs instances Chromium en parallèle.

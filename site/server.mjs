@@ -1501,6 +1501,23 @@ if (path.resolve(process.argv[1] || '') === fileURLToPath(import.meta.url)) {
     initDb().then(async () => {
         await bootstrapConfiguredSuperAdmins();
         await restorePersistedCvFiles();
+        // Nettoyer les runs orphelins (statués 'running' mais sans processus actif)
+        // Cela arrive quand le serveur redémarre pendant une recherche.
+        try {
+            await withDb(async (db) => {
+                const orphaned = await db('search_runs')
+                    .where({ status: 'running' })
+                    .whereNotNull('started_at')
+                    .update({
+                        status: 'failed',
+                        error: 'Serveur redémarré pendant la recherche.',
+                        finished_at: db.fn.now()
+                    });
+                if (orphaned > 0) console.log(`🧹 ${orphaned} recherche(s) orpheline(s) nettoyée(s).`);
+            });
+        } catch (err) {
+            console.warn('⚠️ Impossible de nettoyer les recherches orphelines:', err.message);
+        }
         // Import default CVs for users who don't have any
         try {
             await importDefaultCvs();

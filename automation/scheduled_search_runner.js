@@ -18,7 +18,10 @@ if (payloadJson) {
     }
 }
 
-const SEARCH_RUN_TIMEOUT_MS = Number(process.env.SEARCH_RUN_TIMEOUT_MS || 8 * 60 * 1000);
+// Porté à 15 min car 8 providers séquentiels avec Chromium
+// peuvent prendre 10-12 min (LinkedIn, Indeed, Career Pages
+// nécessitent chacun le lancement de Chromium).
+const SEARCH_RUN_TIMEOUT_MS = Number(process.env.SEARCH_RUN_TIMEOUT_MS || 15 * 60 * 1000);
 
 async function main() {
     let timeoutHandle;

@@ -31,8 +31,12 @@ services:
         value: "0"
       - key: PG_POOL_MAX
         value: "2"
-      # Credentials API providers — à configurer dans le dashboard Render
-      # - FRANCE_TRAVAIL_CLIENT_ID
-      # - FRANCE_TRAVAIL_CLIENT_SECRET
-      # - ADZUNA_APP_ID
-      # - ADZUNA_APP_KEY
+      # Credentials API providers
+      - key: FRANCE_TRAVAIL_CLIENT_ID
+        value: PAR_jobhunterai_c8a81aaaa0b9bbd1f8a7ebd3baf6cbf0076817d205592a2184f682de705a6ef0
+      - key: FRANCE_TRAVAIL_CLIENT_SECRET
+        value: 53d30dc3fcbbd0d7dba39d484693785ef56536cda1f2fe6bb93dd71ce566e4e5
+      - key: ADZUNA_APP_ID
+        value: 2ac72b16
+      - key: ADZUNA_APP_KEY
+        value: ad51a04ff91d015a77033b8a8b1b180c

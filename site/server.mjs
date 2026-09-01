@@ -1072,6 +1072,34 @@ function createApp() {
         }
     });
 
+    // SUPER_ADMIN: delete a user account
+    app.delete('/api/admin/users/:id', authorize(['SUPER_ADMIN']), async (req, res) => {
+        try {
+            const userId = Number(req.params.id);
+            if (!Number.isInteger(userId) || userId <= 0) {
+                return res.status(400).json({ error: 'Identifiant utilisateur invalide.' });
+            }
+            // Cannot delete yourself
+            if (userId === req.user.id) {
+                return res.status(400).json({ error: 'Vous ne pouvez pas supprimer votre propre compte.' });
+            }
+            const deleted = await withDb(async (db) => {
+                // Clean up related data
+                await db('jobs').where({ user_id: userId }).del();
+                await db('cvs').where({ user_id: userId }).del();
+                await db('profile').where({ user_id: userId }).del();
+                await db('search_runs').where({ user_id: userId }).del();
+                await db('search_configs').where({ user_id: userId }).del();
+                await db('scheduled_searches').where({ user_id: userId }).del();
+                return db('users').where({ id: userId }).del();
+            });
+            if (!deleted) return res.status(404).json({ error: 'Utilisateur introuvable.' });
+            res.json({ success: true, message: 'Utilisateur et ses données supprimés.' });
+        } catch (error) {
+            res.status(500).json({ error: 'Erreur lors de la suppression: ' + error.message });
+        }
+    });
+
     app.delete('/api/jobs/:id', auth, async (req, res) => {
         try {
             const jobId = Number(req.params.id);

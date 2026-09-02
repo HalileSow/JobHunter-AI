@@ -1122,15 +1122,18 @@ function createApp() {
 
                 if (!job) return 0;
 
-                // Supprimer explicitement toutes les dépendances avant l’offre.
-                // Cela reste fiable même si la contrainte FK n’a pas CASCADE.
+                // ÉTAPE 1 : supprimer toutes les dépendances avant l’offre.
+                // Cela reste fiable même si les contraintes FK n’ont pas CASCADE.
                 await trx('application_attempts').where({ job_id: job.id }).del();
                 await trx('job_logs').where({ job_id: job.id }).del();
+
+                // ÉTAPE 2 : supprimer ensuite le job, une seule fois.
                 const deleteQuery = trx('jobs').where({ id: job.id });
                 if (req.user.role !== 'SUPER_ADMIN') {
                     deleteQuery.andWhere({ user_id: req.user.id });
                 }
-                return deleteQuery.del();
+                const result = await deleteQuery.del();
+                return result;
             }));
             if (!changes) return res.status(404).json({ error: 'Offre introuvable.' });
             broadcast('job_deleted', { id: jobId }, req.user.id);

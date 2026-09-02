@@ -1,0 +1,110 @@
+# =============================================================================
+# docker-compose.oci.yml — Déploiement OCI (Oracle Cloud Always Free)
+# =============================================================================
+# Utilisation :
+#   docker compose -f docker-compose.oci.yml up -d --build
+#
+# Différences avec docker-compose.yml de dev :
+#   - PostgreSQL avec volume persistant sur /data (block storage OCI)
+#   - Mémoire augmentée (24 GB ARM Ampere A1)
+#   - Caddy avec SSL Let's Encrypt
+#   - Healthcheck PostgreSQL natif
+# =============================================================================
+
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-jobhunter}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Erreur: POSTGRES_PASSWORD requis}
+      POSTGRES_DB: ${POSTGRES_DB:-jobhunter}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-jobhunter} -d ${POSTGRES_DB:-jobhunter}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+        reservations:
+          memory: 256M
+
+  app:
+    build: .
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    env_file:
+      - .env
+    environment:
+      DATABASE_URL: ${DATABASE_URL:-postgresql://${POSTGRES_USER:-jobhunter}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-jobhunter}}
+      NODE_ENV: production
+      PORT: 4173
+      JWT_SECRET: ${JWT_SECRET:?Erreur: JWT_SECRET requis}
+      PG_SSL: "false"
+      # On peut remonter la limite mémoire (24 GB dispo sur l'ARM Ampere)
+      # On garde 1 Go pour Node.js, le reste pour Chromium et les buffers
+      NODE_OPTIONS: --max-old-space-size=1024
+      # Multiple Chromium providers peuvent tourner en parallèle
+      JOBHUNTER_CONCURRENCY: ${JOBHUNTER_CONCURRENCY:-3}
+    ports:
+      - "4173:4173"
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://localhost:4173/api/health').then(r => r.ok ? process.exit(0) : process.exit(1)).catch(() => process.exit(1))"]
+      interval: 15s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    volumes:
+      - app_data:/app/database
+      - app_data:/app/cover_letters/generated
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+        reservations:
+          memory: 512M
+
+  caddy:
+    image: caddy:latest
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - app
+    deploy:
+      resources:
+        limits:
+          memory: 128M
+        reservations:
+          memory: 64M
+
+volumes:
+  postgres_data:
+    driver: local
+    driver_opts:
+      type: none
+      device: /data/postgres
+      o: bind
+  app_data:
+    driver: local
+    driver_opts:
+      type: none
+      device: /data/app
+      o: bind
+  caddy_data:
+    driver: local
+    driver_opts:
+      type: none
+      device: /data/caddy
+      o: bind

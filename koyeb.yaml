@@ -1,0 +1,68 @@
+# =============================================================================
+# koyeb.yaml — Configuration de déploiement Koyeb (free tier)
+# =============================================================================
+# Déploiement : 
+#   1. Pousser le code sur GitHub
+#   2. Dans le dashboard Koyeb : Create App → GitHub → choisir le repo
+#   3. Koyeb lit automatiquement ce fichier
+# =============================================================================
+
+name: jobhunter-ai
+region: fra  # Frankfurt (proche Abidjan, ~80ms)
+
+# ── Base de données PostgreSQL (gratuite) ──
+databases:
+  - name: jobhunter-db
+    type: postgres
+    plan: free
+
+# ── Service web ──
+services:
+  - name: app
+    type: web
+    port: 4173
+    plan: free  # 1 vCPU, 1 GB RAM, 10 GB storage
+    healthcheck:
+      path: /api/health
+      interval: 30
+    routes:
+      - path: /
+        port: 4173
+    docker:
+      dockerfile: ./Dockerfile
+      args:
+        - NODE_ENV=production
+    env:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: "4173"
+      - key: JWT_SECRET
+        secret: JWT_SECRET
+      - key: DATABASE_URL
+        from_database: jobhunter-db
+        property: connection_string
+      - key: PG_SSL
+        value: "true"
+      - key: NODE_OPTIONS
+        value: "--max-old-space-size=512"
+      - key: PG_POOL_MIN
+        value: "0"
+      - key: PG_POOL_MAX
+        value: "3"
+      # ── API Keys (à configurer dans le dashboard Koyeb) ──
+      - key: ADZUNA_APP_ID
+        secret: ADZUNA_APP_ID
+      - key: ADZUNA_APP_KEY
+        secret: ADZUNA_APP_KEY
+      - key: FRANCE_TRAVAIL_CLIENT_ID
+        secret: FRANCE_TRAVAIL_CLIENT_ID
+      - key: FRANCE_TRAVAIL_CLIENT_SECRET
+        secret: FRANCE_TRAVAIL_CLIENT_SECRET
+      - key: GEMINI_API_KEY
+        secret: GEMINI_API_KEY
+      - key: SUPER_ADMIN_EMAILS
+        value: "superadmin@jobhunter.local"
+    lifecycle:
+      post_build:
+        - cmd: "npx knex migrate:latest --knexfile knexfile.cjs"

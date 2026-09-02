@@ -180,6 +180,7 @@ async function tick() {
             keywords: schedule.keywords || '',
             lang: schedule.lang || 'fr',
             status: 'running',
+            started_at: new Date(),
             user_id: userId
         });
 
@@ -227,7 +228,12 @@ async function tick() {
                 last_run_at: db.fn.now(),
                 next_run_at: nextRun ? nextRun.toISOString() : null,
                 total_runs: db.raw('total_runs + 1'),
-                last_status: 'success'
+                last_status: 'success',
+                last_raw_jobs_count: result.rawJobsFound || 0,
+                last_unique_jobs_count: result.uniqueJobsFound || 0,
+                last_analyzed_jobs_count: result.jobsAnalyzed || 0,
+                last_new_jobs_count: result.jobsSaved || 0,
+                last_duplicate_jobs_count: result.duplicateJobsSkipped || 0
             });
 
         } catch (error) {

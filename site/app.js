@@ -303,7 +303,7 @@ async function loadJobs() {
                     <i class="fas fa-box-open"></i> Dossier Prêt
                 </button>
             `;
-        } else if (job.status === 'Enregistré' || job.status === 'Échec') {
+        } else if (job.status === 'Enregistré' || job.status === 'completed' || job.status === 'Échec') {
             actionBtn = `
                 <button type="button" onclick="applyJob(${job.id}, this)" class="btn-apply" title="Lancer le cycle de candidature">
                     <i class="fas fa-paper-plane"></i> Postuler

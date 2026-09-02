@@ -453,82 +453,23 @@ export async function runFullJobHunterSearch({ country, jobTitle, keywords = '',
     for (const job of uniqueJobs) {
         // Vérifier si ce dedup_hash existe déjà en BDD pour cet utilisateur
         const existingInDb = await db('jobs').where({ dedup_hash: job.dedup_hash, user_id: userId }).first();
-        if (existingInDb) {
-            console.log(`⏩ Offre déjà existante en BDD (user ${userId}) : ${job.title} chez ${job.company}`);
-            duplicateJobsSkipped += 1;
-            analyzedCount += 1;
-            processedJobs.push(existingInDb);
-            continue;
-        }
-
         const quotaReached = aiAnalysisCount >= MAX_AI_ANALYSIS;
         const offerText = `Titre: ${job.title}\nEntreprise: ${job.company}\nLieu: ${job.location || country}\nLien: ${job.link}\nSources: ${(job.providers_list || []).join(', ')}\nDescription: ${job.description || 'Description non fournie.'}`;
 
+        let insertedJobId = null;
         try {
-            analyzedCount += 1;
-
-            let aiResult;
-            let selectedCvId = referenceCvId;
-            let pdfPath = null;
-
-            if (!hasReferenceCv) {
-                // CAS 1 : Aucun CV disponible → analyse simplifiée
-                const reason = cvLoadStatus === 'not_found'
-                    ? 'Aucun CV trouvé pour cet utilisateur.'
-                    : cvLoadStatus === 'empty'
-                    ? 'CV trouvé mais vide.'
-                    : `Erreur lecture CV : ${cvLoadError}`;
-                console.log(`[ANALYSE][user_id=${userId}] Analyse SANS CV pour "${job.title}" — Raison: ${reason}`);
-                aiResult = {
-                    score: 50,
-                    letter: 'Analyse non réalisée.',
-                    analysis: `Analyse simplifiée sans CV de référence. ${reason}`
-                };
-            } else if (quotaReached) {
-                // CAS 2 : CV présent mais quota IA atteint → score par défaut AVEC mention du CV
-                console.log(`[ANALYSE][user_id=${userId}] Quota IA atteint (${MAX_AI_ANALYSIS}/${MAX_AI_ANALYSIS}), score par défaut AVEC CV pour "${job.title}"`);
-                aiResult = {
-                    score: 50,
-                    letter: 'Analyse différée — quota d\'analyses IA atteint pour cette exécution. Le CV a bien été pris en compte.',
-                    analysis: `Quota d'analyses IA atteint (${MAX_AI_ANALYSIS} analysées). Le CV de référence a été utilisé pour les offres précédentes. Prochaine analyse complète à la prochaine exécution.`
-                };
-            } else {
-                // CAS 3 : Analyse normale AVEC CV et IA
-                aiAnalysisCount++;
-                console.log(`[ANALYSE][user_id=${userId}] Analyse AVEC CV pour "${job.title}" — CV path: ${referenceCvPath}, provider IA: Gemini→Qwen→OpenAI`);
-                try {
-                    aiResult = await analyzeJob(offerText, { content: referenceCvContent, path: referenceCvPath }, lang);
-                    console.log(`[ANALYSE][user_id=${userId}] Score IA: ${aiResult.score}/100 pour "${job.title}" — réponse IA obtenue`);
-                } catch (aiErr) {
-                    // IA totalement indisponible (tous les providers échouent)
-                    console.log(`[ANALYSE][user_id=${userId}] IA indisponible pour "${job.title}" — ${aiErr.message}`);
-                    aiResult = {
-                        score: 50,
-                        letter: 'Analyse non réalisée.',
-                        analysis: `Service IA temporairement indisponible. Le CV de référence est disponible (${referenceCvPath}). Réessayez plus tard.`
-                    };
-                }
-
-                const pdfFilename = buildPdfFileName('cover', job.company, lang);
-                pdfPath = path.resolve(__dirname, `../cover_letters/generated/${pdfFilename}`);
-                await fs.mkdir(path.dirname(pdfPath), { recursive: true });
-                await exportLetterToPdf(aiResult.letter, job.company, pdfPath);
-            }
-
             const providerInstance = defaultRegistry.get(job.provider);
             const isAutoApplySupported = providerInstance ? (providerInstance.supportsAutoApply(job) ? 1 : 0) : 0;
-
-            const insertedId = await insertAndGetId('jobs', {
+            const persistedOffer = {
                 user_id: userId,
                 title: job.title,
                 company: job.company,
                 link: job.link,
                 country: country,
                 city: job.city || city || '',
-                score: aiResult.score,
-                letter: aiResult.letter,
-                analysis: aiResult.analysis,
-                status: 'Enregistré',
+                status: 'pending',
+                submitted_at: db.fn.now(),
+                error: null,
                 salary: job.salary || 'N/A',
                 contract_type: job.contract_type || contractType || 'Non spécifié',
                 experience_level: job.experience_level || experienceLevel || '',
@@ -542,20 +483,88 @@ export async function runFullJobHunterSearch({ country, jobTitle, keywords = '',
                 search_min_salary: minSalary || '',
                 search_max_salary: maxSalary || '',
                 date_posted: job.date_posted || new Date().toISOString().split('T')[0],
-                selected_cv_id: selectedCvId || null,
-                pdf_path: pdfPath,
                 provider: job.provider || 'generic',
                 external_job_id: job.external_job_id || null,
                 dedup_hash: job.dedup_hash,
                 auto_apply_supported: isAutoApplySupported
-            });
+            };
 
-            const insertedJob = await db('jobs').where({ id: insertedId?.id ?? insertedId }).first();
-            processedJobs.push(insertedJob);
+            // ÉTAPE A : persister immédiatement l'offre avant l'analyse IA/PDF.
+            // Les étapes suivantes peuvent donc échouer sans perdre l'offre.
+            if (existingInDb) {
+                console.log(`🔄 Offre déjà existante en BDD, rafraîchissement (user ${userId}) : ${job.title} chez ${job.company}`);
+                duplicateJobsSkipped += 1;
+                await db('jobs').where({ id: existingInDb.id, user_id: userId }).update(persistedOffer);
+                insertedJobId = existingInDb.id;
+            } else {
+                insertedJobId = await insertAndGetId('jobs', persistedOffer);
+                insertedJobId = insertedJobId?.id ?? insertedJobId;
+            }
 
-            console.log(`💾 Offre enregistrée (ID: ${insertedJob.id}, User: ${userId}) | Score: ${insertedJob.score}/100`);
+            analyzedCount += 1;
+            let aiResult;
+            let selectedCvId = referenceCvId;
+            let pdfPath = null;
+
+            try {
+                // ÉTAPE B : analyser l'offre avec l'IA.
+                if (!hasReferenceCv) {
+                    const reason = cvLoadStatus === 'not_found'
+                        ? 'Aucun CV trouvé pour cet utilisateur.'
+                        : cvLoadStatus === 'empty'
+                        ? 'CV trouvé mais vide.'
+                        : `Erreur lecture CV : ${cvLoadError}`;
+                    console.log(`[ANALYSE][user_id=${userId}] Analyse SANS CV pour "${job.title}" — Raison: ${reason}`);
+                    aiResult = {
+                        score: 50,
+                        letter: 'Analyse non réalisée.',
+                        analysis: `Analyse simplifiée sans CV de référence. ${reason}`
+                    };
+                } else if (quotaReached) {
+                    console.log(`[ANALYSE][user_id=${userId}] Quota IA atteint (${MAX_AI_ANALYSIS}/${MAX_AI_ANALYSIS}), score par défaut AVEC CV pour "${job.title}"`);
+                    aiResult = {
+                        score: 50,
+                        letter: 'Analyse différée — quota d\'analyses IA atteint pour cette exécution. Le CV a bien été pris en compte.',
+                        analysis: `Quota d'analyses IA atteint (${MAX_AI_ANALYSIS} analysées). Le CV de référence a été utilisé pour les offres précédentes. Prochaine analyse complète à la prochaine exécution.`
+                    };
+                } else {
+                    aiAnalysisCount++;
+                    console.log(`[ANALYSE][user_id=${userId}] Analyse AVEC CV pour "${job.title}" — CV path: ${referenceCvPath}, provider IA: Gemini→Qwen→OpenAI`);
+                    aiResult = await analyzeJob(offerText, { content: referenceCvContent, path: referenceCvPath }, lang);
+                    console.log(`[ANALYSE][user_id=${userId}] Score IA: ${aiResult.score}/100 pour "${job.title}" — réponse IA obtenue`);
+                }
+
+                // ÉTAPE C : générer le PDF.
+                const pdfFilename = buildPdfFileName('cover', job.company, lang);
+                pdfPath = path.resolve(__dirname, `../cover_letters/generated/${pdfFilename}`);
+                await fs.mkdir(path.dirname(pdfPath), { recursive: true });
+                await exportLetterToPdf(aiResult.letter, job.company, pdfPath);
+
+                // ÉTAPE D : finaliser l'offre avec les résultats IA/PDF.
+                await db('jobs').where({ id: insertedJobId }).update({
+                    status: 'completed',
+                    score: aiResult.score,
+                    letter: aiResult.letter,
+                    analysis: aiResult.analysis,
+                    selected_cv_id: selectedCvId || null,
+                    pdf_path: pdfPath,
+                    error: null
+                });
+            } catch (processingError) {
+                // L'offre a déjà été persistée : conserver sa trace en cas d'échec IA/PDF.
+                await db('jobs').where({ id: insertedJobId }).update({
+                    status: 'failed',
+                    error: processingError.message
+                });
+                console.error(`❌ Erreur IA/PDF pour ${job.company}:`, processingError.message);
+            }
+
+            const processedJob = await db('jobs').where({ id: insertedJobId }).first();
+            processedJobs.push(processedJob);
+            console.log(`💾 Offre persistée (ID: ${processedJob.id}, User: ${userId}) | Statut: ${processedJob.status}`);
         } catch (err) {
-            console.error(`❌ Erreur traitement IA pour ${job.company}:`, err.message);
+            // Une erreur d'insertion est distincte d'une erreur IA/PDF.
+            console.error(`❌ Erreur persistance de l'offre ${job.company}:`, err.message);
         }
     }
 

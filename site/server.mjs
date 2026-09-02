@@ -348,26 +348,21 @@ function createApp() {
             const stats = await withDb(async (db) => {
             const [jobsCount] = await db('jobs').count('id as count');
             const [runsCount] = await db('search_runs').count('id as count');
-            // Prendre le dernier run terminé pour les statistiques
+            // Le statut et les compteurs doivent provenir du même run terminé.
             const latestCompletedRun = await db('search_runs')
                 .select('*')
-                .whereIn('status', ['completed', 'failed'])
+                .where({ status: 'completed' })
                 .orderBy('finished_at', 'desc')
                 .orderBy('id', 'desc')
                 .first();
-            // Prendre le dernier run (quel que soit son statut) pour l'état actuel
-            const latestSearchRun = await db('search_runs').select('*').orderBy('created_at', 'desc').orderBy('id', 'desc').first();
             return {
                 totalJobs: Number(jobsCount?.count || 0),
                 totalSearchRuns: Number(runsCount?.count || 0),
-                latestSearchRun: latestSearchRun || null,
-                // L'état affiché doit suivre le run le plus récent, même si le
-                // précédent s'est terminé en erreur. Les compteurs restent
-                // basés sur le dernier run terminé.
-                lastSearchAt: latestSearchRun?.created_at || latestCompletedRun?.finished_at || null,
-                lastSearchStatus: latestSearchRun?.status || latestCompletedRun?.status || 'unknown',
-                lastAnalyzedJobs: Number(latestCompletedRun?.analyzed_jobs_count || latestSearchRun?.analyzed_jobs_count || 0),
-                lastNewJobs: Number(latestCompletedRun?.saved_jobs_count || latestSearchRun?.saved_jobs_count || 0)
+                latestSearchRun: latestCompletedRun || null,
+                lastSearchAt: latestCompletedRun?.finished_at || null,
+                lastSearchStatus: latestCompletedRun?.status || 'unknown',
+                lastAnalyzedJobs: Number(latestCompletedRun?.analyzed_jobs_count || 0),
+                lastNewJobs: Number(latestCompletedRun?.saved_jobs_count || 0)
             };
         });
             const providers = defaultRegistry.getMetadataList();
@@ -1123,9 +1118,11 @@ function createApp() {
                 // Cela reste fiable même si la contrainte FK n’a pas CASCADE.
                 await trx('application_attempts').where({ job_id: job.id }).del();
                 await trx('job_logs').where({ job_id: job.id }).del();
-                return trx('jobs')
-                    .where({ id: job.id, user_id: req.user.id })
-                    .del();
+                const deleteQuery = trx('jobs').where({ id: job.id });
+                if (req.user.role !== 'SUPER_ADMIN') {
+                    deleteQuery.andWhere({ user_id: req.user.id });
+                }
+                return deleteQuery.del();
             }));
             if (!changes) return res.status(404).json({ error: 'Offre introuvable.' });
             broadcast('job_deleted', { id: jobId }, req.user.id);

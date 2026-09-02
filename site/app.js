@@ -260,8 +260,8 @@ document.querySelectorAll('.nav-item').forEach(btn => {
 
 function getStatusClass(status) {
     if (status === 'Soumis') return 'submitted';
-    if (status === 'En attente de confirmation') return 'pending';
-    if (status === 'Échec') return 'failed';
+    if (status === 'En attente de confirmation' || status === 'pending') return 'pending';
+    if (status === 'Échec' || status === 'failed') return 'failed';
     return 'registered';
 }
 

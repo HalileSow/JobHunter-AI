@@ -550,7 +550,7 @@ function createApp() {
                 const [inserted] = await db('search_runs').insert({
                     country: schedule.country, title: schedule.title,
                     keywords: schedule.keywords || '', lang: schedule.lang || 'fr',
-                    status: 'running', user_id: userId
+                    status: 'running', started_at: new Date(), user_id: userId
                 }).returning('id');
                 const runId = inserted?.id || inserted;
 
@@ -558,6 +558,14 @@ function createApp() {
                     const result = await runFullJobHunterSearch({
                         country: schedule.country, jobTitle: schedule.title,
                         keywords: schedule.keywords || '', lang: schedule.lang || 'fr',
+                        city: schedule.city || '',
+                        experienceLevel: schedule.experience_level || '',
+                        contractType: schedule.contract_type || '',
+                        remote: schedule.remote || '',
+                        jobType: schedule.job_type || '',
+                        salary: schedule.salary || '',
+                        minSalary: schedule.min_salary || '',
+                        maxSalary: schedule.max_salary || '',
                         selectedProviderIds: JSON.parse(schedule.providers_list || '[]'),
                         userId
                     });

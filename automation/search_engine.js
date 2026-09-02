@@ -446,6 +446,7 @@ export async function runFullJobHunterSearch({ country, jobTitle, keywords = '',
 
     const processedJobs = [];
     let analyzedCount = 0;
+    let newJobsPersisted = 0;
     let duplicateJobsSkipped = 0;
     let aiAnalysisCount = 0;
 
@@ -499,6 +500,7 @@ export async function runFullJobHunterSearch({ country, jobTitle, keywords = '',
             } else {
                 insertedJobId = await insertAndGetId('jobs', persistedOffer);
                 insertedJobId = insertedJobId?.id ?? insertedJobId;
+                newJobsPersisted += 1;
             }
 
             analyzedCount += 1;
@@ -575,7 +577,7 @@ export async function runFullJobHunterSearch({ country, jobTitle, keywords = '',
         uniqueJobsFound: searchResult.uniqueJobsFound || uniqueJobs.length,
         jobsAnalyzed: analyzedCount,
         jobsFound: uniqueJobs.length,
-        jobsSaved: processedJobs.length,
+        jobsSaved: newJobsPersisted,
         duplicateJobsSkipped,
         jobs: processedJobs
     };

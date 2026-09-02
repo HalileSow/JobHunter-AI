@@ -26,8 +26,8 @@ function postgresConfig() {
       ssl: process.env.PG_SSL === 'true' ? { rejectUnauthorized: false } : false
     },
     pool: {
-      min: 0,
-      max: 2,
+      min: Number(process.env.PG_POOL_MIN || 0),
+      max: Number(process.env.PG_POOL_MAX || 2),
       acquireTimeoutMillis: 15000,
       idleTimeoutMillis: 30000,
       reapIntervalMillis: 1000
